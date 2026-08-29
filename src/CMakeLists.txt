@@ -12,7 +12,7 @@ else()
     set(OTA_FILE_VERSION 0x01010110)
 endif()
 
-add_custom_command(TARGET ${CMAKE_PROJECT_NAME}.elf POST_BUILD
+add_custom_command(TARGET gen_project_binary POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Generating Zigbee OTA Image with Version ${OTA_FILE_VERSION}..."
     COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/tools/image_builder_tool.py
         --manuf-id 0x1001
