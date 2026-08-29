@@ -23,9 +23,9 @@ This is a ESP-IDF embedded system project for a greenhouse irrigation controller
 
 ## Git
 - NEVER push changes to main branch
-- You must create a new branch from main when starting to work on a new feature.
+- You must create a new branch from main when you are ready to commit and push a new feature. Make sure to fetch latest changes from main first
 - Use short descriptive PR titles that reflects the changes
-- Run tests before commiting changes
+- Run tests and verify project builds before commiting changes
 
 ## Executing commands
 - When esp-idf commands like "idf.py build" or "idf.py menuconfig" needs to be used, if the dev container is not running start it by executing:
