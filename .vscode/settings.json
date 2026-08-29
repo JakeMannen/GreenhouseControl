@@ -10,5 +10,6 @@
     "board/esp32c6-builtin.cfg"
   ],
   "idf.portWin": "COM4",
-  "idf.currentSetup": "/opt/esp/idf"
+  "idf.currentSetup": "/opt/esp/idf",
+  "cmake.sourceDirectory": "${workspaceFolder}/src"
 }

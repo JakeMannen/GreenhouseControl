@@ -1,7 +1,7 @@
 {
   "name": "ESP-IDF ESP32-C6",
   "image": "espressif/idf:v6.1",
-  "workspaceFolder": "/project",
+  "workspaceFolder": "/project/src",
   "mounts": [
     "source=${localWorkspaceFolder},target=/project,type=bind",
     "source=extensionCache,target=/root/.vscode-server/extensions,type=volume",

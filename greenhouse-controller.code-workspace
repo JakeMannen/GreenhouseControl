@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "name": "Firmware (src)",
+      "path": "src"
+    },
+    {
+      "name": "Repo Root",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "idf.saveScope": "WorkspaceFolder",
+    "C_Cpp.default.compileCommands": "${workspaceFolder:Firmware (src)}/build/compile_commands.json"
+  }
+}
