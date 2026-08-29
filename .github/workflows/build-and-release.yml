@@ -50,7 +50,7 @@ jobs:
           name: greenhouse-firmware-v${{ steps.semver.outputs.version }}
           path: |
             src/build/greenhouse_controller.bin
-            src/build/*-ota-file.ota
+            src/build/*.ota
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -58,4 +58,4 @@ jobs:
           tag_name: v${{ steps.semver.outputs.version }}
           generate_release_notes: true
           prerelease: ${{ github.ref != 'refs/heads/main' }}
-          files: src/build/*-ota-file.ota
+          files: src/build/*.ota

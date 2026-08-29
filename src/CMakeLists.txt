@@ -18,6 +18,7 @@ add_custom_command(TARGET gen_project_binary POST_BUILD
         --manuf-id 0x1001
         --image-type 0x1011
         --file-version ${OTA_FILE_VERSION}
+        --output ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-v${OTA_FILE_VERSION}.ota
         --tag 0x1234
         ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.bin
     COMMENT "Building Zigbee OTA Image"

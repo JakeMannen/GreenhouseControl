@@ -112,6 +112,7 @@ if __name__ == "__main__":
     parser.add_argument("--upgrade-dest", type=str, help="Destination EUI64 (optional)")
     parser.add_argument("--min-hw-ver", type=any_int, help="Minimum hardware version (optional)")
     parser.add_argument("--max-hw-ver", type=any_int, help="Maximum hardware version (optional)")
+    parser.add_argument("-o", "--output", type=str, help="Output file name")
     parser.add_argument(
         "--tag",
         action="append",
@@ -139,7 +140,10 @@ if __name__ == "__main__":
             })
     args.tags = tag_list
 
-    output = f"{args.manuf_id:04X}-{args.image_type:04X}-{args.file_version:08X}-ota-file.ota"
+    if args.output:
+        output = args.output
+    else:
+        output = f"{args.manuf_id:04X}-{args.image_type:04X}-{args.file_version:08X}-ota-file.ota"
 
     #  Generate OTA data
     data = generate_ota_file(**vars(args))
