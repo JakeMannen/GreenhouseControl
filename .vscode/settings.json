@@ -13,3 +13,4 @@
   "idf.currentSetup": "/opt/esp/idf",
   "cmake.sourceDirectory": "${workspaceFolder}/src"
 }
+
