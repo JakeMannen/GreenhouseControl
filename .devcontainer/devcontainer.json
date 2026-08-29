@@ -1,7 +1,7 @@
 {
   "name": "ESP-IDF ESP32-C6",
   "image": "espressif/idf:v6.1",
-  "workspaceFolder": "/project",
+  "workspaceFolder": "/project/src",
   "mounts": [
     "source=${localWorkspaceFolder},target=/project,type=bind",
     "source=extensionCache,target=/root/.vscode-server/extensions,type=volume",
@@ -25,7 +25,7 @@
         "idf.pythonBinPath": "/opt/esp/python_env/idf6.1_py3.12_env/bin/python",
         "idf.port": "/dev/ttyACM0",
         "idf.flashType": "UART",
-        "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+        "C_Cpp.default.compileCommands": "${workspaceFolder}/src/build/compile_commands.json",
         "C_Cpp.intelliSenseEngine": "default"
       }
     }
