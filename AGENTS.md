@@ -1,31 +1,41 @@
 
 # Project main features
-
 This is a ESP-IDF embedded system project for a greenhouse irrigation controller. Main features and technologies are Zigbee, I2C, UART and GPIO that communicates with devices & sensors such as water pumps, temperature/humidity, On/Off switches and Solar panel controller.
 
-## Restrictions
-
-NEVER install anything on the host machine like python, esp-idf or other tools
-
 ## Device
+- The ESP32-C6 is the intended hardware for this controller software
+- Make changes also compatible with other hardware when poosible
 
-The ESP32C6 is the intended hardware for this controller software
+## Frameworks
 
-## Frameworks to use
+- Use these frameworks unless new functionalty requires upgrade
+    - ESP-IDF >= v6.1
+    - esp_zigbee_lib >= v2.0.1
 
-- ESP-IDF >= v6.1
-- esp_zigbee_lib v2.0.1
+- NEVER install anything on the host machine like python, esp-idf or other tools
+- ALWAYS ask before upgrading or downgrading framework versions
+
+## Coding style
+- Use common style guides for ESP-IDF and FreeRTOS
+
+## Tesing
+- Add tests for new introduced or changed code when possible
+
+## Git
+- NEVER push changes to main branch
+- You must create a new branch from main when starting to work on a new feature.
+- Use short descriptive PR titles that reflects the changes
+- Run tests before commiting changes
 
 ## Executing commands
+- When esp-idf commands like "idf.py build" or "idf.py menuconfig" needs to be used, if the dev container is not running start it by executing:
+`devcontainer up --workspace-folder .`.
 
-When esp-idf commands like "idf.py build" or "idf.py menuconfig" needs to be used, it must be executed in the /src/.devcontainer using "devcontainer exec <COMMAND>". If it is not running, start it by executing "devcontainer up --workspace-folder ." in the project root folder.
-
-Examples:
-- devcontainer exec idf.py build
-- devcontainer exec idf.py flash
+- And execute commands targeting the `src` directory:
+    - `devcontainer exec --workspace-folder . idf.py -C src build`
+    - `devcontainer exec --workspace-folder . idf.py -C src flash`
 
 ## Resources
-
-ESP-IDF source code: https://github.com/espressif/esp-idf
-esp_zigbee_lib source code: https://github.com/espressif/esp-zigbee-sdk/tree/main/components/esp-zigbee-lib
-esp_zigbee_lib migration from v1.X to v2.X: https://docs.espressif.com/projects/esp-zigbee-sdk/en/latest/esp32/migration-guide/v2.x/index.html
+- ESP-IDF source code: https://github.com/espressif/esp-idf
+- esp_zigbee_lib source code: https://github.com/espressif/esp-zigbee-sdk/tree/main/components/esp-zigbee-lib
+- esp_zigbee_lib migration from v1.X to v2.X: https://docs.espressif.com/projects/esp-zigbee-sdk/en/latest/esp32/migration-guide/v2.x/index.html
