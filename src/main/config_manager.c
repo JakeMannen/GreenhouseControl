@@ -13,6 +13,7 @@ static void set_default_config(app_config_t *cfg) {
     cfg->report_threshold_panel_mv = 500;
     cfg->report_threshold_charge_current_ma = 100;
     cfg->report_threshold_panel_power_w = 2;
+    cfg->report_threshold_load_current_ma = 50;
 
     cfg->report_interval_max_us = 300000000LL;
     cfg->report_interval_min_us = 10000000LL;

@@ -18,6 +18,9 @@ const definition = {
             type: ['attributeReport', 'readResponse'],
             convert: (model, msg, publish, options, meta) => {
                 if (msg.data.hasOwnProperty('onOff')) {
+                    if (msg.endpoint && msg.endpoint.ID === 4) {
+                        return { load_state: msg.data['onOff'] === 1 ? 'ON' : 'OFF' };
+                    }
                     return { pump_1: msg.data['onOff'] === 1 ? 'ON' : 'OFF' };
                 }
             },
@@ -49,6 +52,15 @@ const definition = {
             type: ['attributeReport', 'readResponse'],
             convert: (model, msg, publish, options, meta) => {
                 const result = {};
+                if (msg.endpoint && msg.endpoint.ID === 4) {
+                    if (msg.data.hasOwnProperty('rmsCurrent') || msg.data.hasOwnProperty(1288)) {
+                        let val = msg.data['rmsCurrent'] !== undefined ? msg.data['rmsCurrent'] : msg.data[1288];
+                        result.load_current = val / 100.0;
+                    }
+                    return Object.keys(result).length > 0 ? result : undefined;
+                }
+
+                // Solar Endpoint (Endpoint 3)
                 // We switched the firmware to use RMS Voltage (1285), RMS Current (1288), and Active Power (1291)
                 if (msg.data.hasOwnProperty('rmsVoltage') || msg.data.hasOwnProperty(1285)) {
                     let val = msg.data['rmsVoltage'] !== undefined ? msg.data['rmsVoltage'] : msg.data[1285];
@@ -71,6 +83,7 @@ const definition = {
         const endpoint_pump = device.getEndpoint(1);
         const endpoint_climate = device.getEndpoint(2);
         const endpoint_solar = device.getEndpoint(3);
+        const endpoint_load = device.getEndpoint(4);
         
         // Bind all clusters so the coordinator receives the reports
         await endpoint_pump.bind('genOnOff', coordinatorEndpoint);
@@ -78,6 +91,10 @@ const definition = {
         await endpoint_climate.bind('msTemperatureMeasurement', coordinatorEndpoint);
         await endpoint_climate.bind('msRelativeHumidity', coordinatorEndpoint);
         await endpoint_solar.bind('haElectricalMeasurement', coordinatorEndpoint);
+        if (endpoint_load) {
+            await endpoint_load.bind('genOnOff', coordinatorEndpoint);
+            await endpoint_load.bind('haElectricalMeasurement', coordinatorEndpoint);
+        }
 
         // Force configure reporting for the battery cluster
         try {
@@ -108,13 +125,15 @@ const definition = {
     // Expose entities to Home Assistant
     exposes: [
         exposes.binary('pump_1', ea.ALL, 'ON', 'OFF').withValueToggle('TOGGLE').withDescription('Pump 1'),
+        exposes.binary('load_state', ea.STATE, 'ON', 'OFF').withDescription('Load Output State'),
         e.temperature().withDescription('Temperature'),
         e.humidity().withDescription('Humidity'),
         e.numeric('battery', ea.STATE).withUnit('%').withDescription('Battery Percentage'),
         e.numeric('battery_voltage', ea.STATE).withUnit('V').withDescription('Battery Voltage'),
         e.numeric('solar_power', ea.STATE).withUnit('W').withDescription('Solar Power'),
         e.numeric('solar_voltage', ea.STATE).withUnit('V').withDescription('Solar Voltage'),
-        e.numeric('solar_current', ea.STATE).withUnit('A').withDescription('Solar Current')
+        e.numeric('solar_current', ea.STATE).withUnit('A').withDescription('Solar Current'),
+        e.numeric('load_current', ea.STATE).withUnit('A').withDescription('Load Current')
     ],
 };
 

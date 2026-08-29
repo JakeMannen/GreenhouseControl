@@ -29,7 +29,7 @@ void ve_direct_parse_line(const char *label, const char *value, ve_direct_data_t
     } else if (strcmp(label, STATE_OF_OPERATION) == 0) {
         temp_data->charge_state = atoi(value);
     } else if (strcmp(label, LOAD_OUTPUT_STATE) == 0) {
-        temp_data->load_output_state = atoi(value);
+        temp_data->load_output_state = (strcmp(value, "ON") == 0 || strcmp(value, "1") == 0) ? 1 : 0;
     } else if (strcmp(label, LOAD_CURRENT) == 0) {
         temp_data->load_current = atoi(value);
     } else if (strcmp(label, OFF_REASON) == 0) {
@@ -166,6 +166,10 @@ bool ve_direct_get_data(ve_direct_data_t *data) {
             data->panel_voltage_mv = s_ve_data.panel_voltage_mv;
             data->panel_power_w = s_ve_data.panel_power_w;
             data->charge_state = s_ve_data.charge_state;
+            data->load_output_state = s_ve_data.load_output_state;
+            data->load_current = s_ve_data.load_current;
+            data->off_reason = s_ve_data.off_reason;
+            data->error_code = s_ve_data.error_code;
             data->is_updated = false;
             
             s_ve_data.is_updated = false; // Reset read flag
