@@ -13,7 +13,7 @@ else()
 endif()
 
 add_custom_command(TARGET ${CMAKE_PROJECT_NAME}.elf POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Generating Zigbee OTA Image (Version ${OTA_FILE_VERSION})..."
+    COMMAND ${CMAKE_COMMAND} -E echo "Generating Zigbee OTA Image with Version ${OTA_FILE_VERSION}..."
     COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/tools/image_builder_tool.py
         --manuf-id 0x1001
         --image-type 0x1011
@@ -21,4 +21,5 @@ add_custom_command(TARGET ${CMAKE_PROJECT_NAME}.elf POST_BUILD
         --tag 0x1234
         ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.bin
     COMMENT "Building Zigbee OTA Image"
+    VERBATIM
 )
