@@ -1,10 +1,14 @@
-#ifndef GPIO_DRIVERS_H
-#define GPIO_DRIVERS_H
+#pragma once
 
+#include <stdbool.h>
 #include "esp_err.h"
 #include "hal/gpio_types.h"
 
-// Pins and timeouts are now configured via Kconfig / config_manager
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Pins and timeouts are configured via Kconfig / config_manager
 
 /**
  * @brief Initialize the GPIOs for the pump and button.
@@ -28,4 +32,7 @@ void gpio_set_pump_state(bool is_on);
  */
 bool gpio_get_pump_state(void);
 
-#endif // GPIO_DRIVERS_H
+#ifdef __cplusplus
+}
+#endif
+

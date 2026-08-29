@@ -10,7 +10,7 @@ static const char *TAG = "LED";
 static led_strip_handle_t s_led_strip;
 static TaskHandle_t s_blink_task_handle = NULL;
 static uint8_t            s_red = 255, s_green = 255, s_blue = 255, s_level = 255;
-static uint8_t             s_blink_brightness = CONFIG_LED_BLINK_BRIGHTNESS;
+static uint8_t             s_blink_brightness = CONFIG_GH_LED_BLINK_BRIGHTNESS;
 
 static void light_driver_blink_loop_task(void *pvParameters)
 {

@@ -9,9 +9,9 @@
 
 static const char *TAG = "VE_DIRECT";
 
-static SemaphoreHandle_t g_ve_mutex = NULL;
-static ve_direct_data_t g_ve_data = {0};
-static energy_report_callback_t en_cb;
+static SemaphoreHandle_t s_ve_mutex = NULL;
+static ve_direct_data_t s_ve_data = {0};
+static energy_report_callback_t s_energy_report_cb = NULL;
 
 /**
  * @brief Parses a single line from the VE.Direct text protocol.
@@ -45,17 +45,17 @@ void ve_direct_parse_line(const char *label, const char *value, ve_direct_data_t
  */
 esp_err_t ve_direct_finalize_block(ve_direct_data_t *temp_data, uint8_t checksum) {
     if (checksum == 0) {
-        if (g_ve_mutex != NULL && xSemaphoreTake(g_ve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (s_ve_mutex != NULL && xSemaphoreTake(s_ve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
 
-            g_ve_data = *temp_data;
-            g_ve_data.is_updated = true;
-            if (en_cb != NULL) {
-                en_cb(&g_ve_data);
+            s_ve_data = *temp_data;
+            s_ve_data.is_updated = true;
+            if (s_energy_report_cb != NULL) {
+                s_energy_report_cb(&s_ve_data);
             }
-            xSemaphoreGive(g_ve_mutex);
+            xSemaphoreGive(s_ve_mutex);
             
             ESP_LOGD(TAG, "Parsed VALID VE.Direct block\n\t| Battery voltage: %d mV |\n\t | Battery current: %d mA |\n\t | Panel voltage: %d mV |\n\t | Panel power: %d W |\n\t | Load current: %d mA |\n\t | Load output state: %d |\n\t | Off reason: %d |",
-                     g_ve_data.battery_voltage_mv, g_ve_data.charge_current_ma, g_ve_data.panel_voltage_mv, g_ve_data.panel_power_w, g_ve_data.load_current, g_ve_data.load_output_state, g_ve_data.off_reason);
+                     s_ve_data.battery_voltage_mv, s_ve_data.charge_current_ma, s_ve_data.panel_voltage_mv, s_ve_data.panel_power_w, s_ve_data.load_current, s_ve_data.load_output_state, s_ve_data.off_reason);
         }
         return ESP_OK;
     } else {
@@ -111,7 +111,7 @@ static void ve_direct_parser_task(void *pvParameters) {
 
 esp_err_t ve_direct_init(uart_port_t port, gpio_num_t rx_pin, energy_report_callback_t energy_cb) {
 
-    en_cb = energy_cb;
+    s_energy_report_cb = energy_cb;
 
     uart_config_t uart_config = {
         .baud_rate = VE_DIRECT_BAUD_RATE,
@@ -140,12 +140,10 @@ esp_err_t ve_direct_init(uart_port_t port, gpio_num_t rx_pin, energy_report_call
         return err;
     }
 
-    //#ifdef VE_INVERT_SIGNAL
     ESP_ERROR_CHECK(uart_set_line_inverse(VE_DIRECT_UART_PORT, UART_SIGNAL_RXD_INV));
-    //#endif
 
-    g_ve_mutex = xSemaphoreCreateMutex();
-    if (g_ve_mutex == NULL) {
+    s_ve_mutex = xSemaphoreCreateMutex();
+    if (s_ve_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create VE.Direct mutex");
         return ESP_ERR_NO_MEM;
     }
@@ -156,24 +154,24 @@ esp_err_t ve_direct_init(uart_port_t port, gpio_num_t rx_pin, energy_report_call
 }
 
 bool ve_direct_get_data(ve_direct_data_t *data) {
-    if (data == NULL || g_ve_mutex == NULL) {
+    if (data == NULL || s_ve_mutex == NULL) {
         return false;
     }
 
     bool updated = false;
-    if (xSemaphoreTake(g_ve_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        if (g_ve_data.is_updated) {
-            data->battery_voltage_mv = g_ve_data.battery_voltage_mv;
-            data->charge_current_ma = g_ve_data.charge_current_ma;
-            data->panel_voltage_mv = g_ve_data.panel_voltage_mv;
-            data->panel_power_w = g_ve_data.panel_power_w;
-            data->charge_state = g_ve_data.charge_state;
+    if (xSemaphoreTake(s_ve_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (s_ve_data.is_updated) {
+            data->battery_voltage_mv = s_ve_data.battery_voltage_mv;
+            data->charge_current_ma = s_ve_data.charge_current_ma;
+            data->panel_voltage_mv = s_ve_data.panel_voltage_mv;
+            data->panel_power_w = s_ve_data.panel_power_w;
+            data->charge_state = s_ve_data.charge_state;
             data->is_updated = false;
             
-            g_ve_data.is_updated = false; // Reset read flag
+            s_ve_data.is_updated = false; // Reset read flag
             updated = true;
         }
-        xSemaphoreGive(g_ve_mutex);
+        xSemaphoreGive(s_ve_mutex);
     }
     return updated;
 }

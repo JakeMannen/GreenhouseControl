@@ -13,12 +13,12 @@
 #include "led.h"
 
 static const char *TAG = "ZB_CONTROLLER";
-static bool g_connected = false;
-static esp_timer_handle_t steering_timer;
+static bool s_is_connected = false;
+static esp_timer_handle_t s_steering_timer;
 
 bool zigbee_is_connected(void)
 {
-    return g_connected;
+    return s_is_connected;
 }
 
 static void steering_timer_cb(void *arg)
@@ -51,13 +51,13 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
                 } else {
                     light_driver_set_ok(2000); // Indicate successful rejoin
                     ESP_LOGI(TAG, "Re-joined existing network");
-                    g_connected = true;
+                    s_is_connected = true;
                 }
             } else {
                 ESP_LOGW(TAG, "%s failed (status: 0x%02x)",
                         ezb_app_signal_to_string(signal_type), status);
-                g_connected = false;
-                esp_timer_start_once(steering_timer, 2000000); // Retry after 2 seconds
+                s_is_connected = false;
+                esp_timer_start_once(s_steering_timer, 2000000); // Retry after 2 seconds
             }
         } break;
 
@@ -72,12 +72,12 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
                         ezb_nwk_get_panid(), ext_panid.u64,
                         ezb_nwk_get_current_channel(), ezb_nwk_get_short_address());
                 light_driver_set_success(); // Indicate successful network join
-                g_connected = true;
+                s_is_connected = true;
             } else {
                 light_driver_set_error(); // Indicate network join failure
                 ESP_LOGW(TAG, "Network steering failed (status: 0x%02x)", status);
-                g_connected = false;
-                esp_timer_start_once(steering_timer, 2000000); // Retry after 2 seconds
+                s_is_connected = false;
+                esp_timer_start_once(s_steering_timer, 2000000); // Retry after 2 seconds
             }
         } break;
 
@@ -89,7 +89,7 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
 
         case EZB_ZDO_SIGNAL_LEAVE: {
             ESP_LOGI(TAG, "Leave network, restarting network steering");
-            g_connected = false;
+            s_is_connected = false;
             ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_INITIALIZATION);
         } break;
 
@@ -322,7 +322,7 @@ static void zb_main_task(void *arg)
         .dispatch_method = ESP_TIMER_TASK,
         .name = "steering_timer"
     };
-    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &steering_timer));
+    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_steering_timer));
 
     ezb_aps_secur_enable_distributed_security(false);
     ESP_ERROR_CHECK(ezb_bdb_set_primary_channel_set(ZB_PRIMARY_CHANNEL_MASK));

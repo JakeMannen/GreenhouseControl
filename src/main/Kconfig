@@ -1,31 +1,31 @@
 menu "Greenhouse Controller Configuration"
 
     menu "Hardware Pins"
-        config SHT30_SDA_PIN
+        config GH_SHT30_SDA_PIN
             int "SHT30 I2C SDA Pin"
             default 6
             help
                 GPIO pin used for SHT30 SDA
 
-        config SHT30_SCL_PIN
+        config GH_SHT30_SCL_PIN
             int "SHT30 I2C SCL Pin"
             default 7
             help
                 GPIO pin used for SHT30 SCL
 
-        config VE_DIRECT_RX_PIN
+        config GH_VE_DIRECT_RX_PIN
             int "VE.Direct UART RX Pin"
             default 17
             help
                 GPIO pin used to receive data from VE.Direct
 
-        config PUMP_GPIO_PIN
+        config GH_PUMP_GPIO_PIN
             int "Pump Relay GPIO Pin"
             default 20
             help
                 GPIO pin used to control the pump relay
 
-        config BUTTON_GPIO_PIN
+        config GH_BUTTON_GPIO_PIN
             int "Manual Button GPIO Pin"
             default 21
             help
@@ -33,19 +33,19 @@ menu "Greenhouse Controller Configuration"
     endmenu
 
     menu "Zigbee Settings"
-        config ZIGBEE_MANUFACTURER_NAME
+        config GH_ZIGBEE_MANUFACTURER_NAME
             string "Manufacturer Name"
             default "Espressif"
             help
                 Zigbee Manufacturer Name
 
-        config ZIGBEE_MODEL_IDENTIFIER
+        config GH_ZIGBEE_MODEL_IDENTIFIER
             string "Model Identifier"
             default "GreenHouse Controller"
             help
                 Zigbee Model Identifier
 
-        config ZIGBEE_HW_VERSION
+        config GH_ZIGBEE_HW_VERSION
             int "Hardware Version"
             default 1
             help
@@ -53,43 +53,40 @@ menu "Greenhouse Controller Configuration"
     endmenu
 
     menu "Misc Settings"
-        config PUMP_SAFETY_TIMEOUT_MIN
+        config GH_PUMP_SAFETY_TIMEOUT_MIN
             int "Pump Safety Timeout (Minutes)"
             default 10
             help
                 How many minutes before the pump automatically shuts off
 
-        config SHT30_POLL_INTERVAL_MS
+        config GH_SHT30_POLL_INTERVAL_MS
             int "SHT30 Polling Interval (ms)"
             default 10000
             help
                 How often to poll the SHT30 sensor in milliseconds
 
-        config BUTTON_DEBOUNCE_US
+        config GH_BUTTON_DEBOUNCE_US
             int "Button Debounce (us)"
             default 250000
             help
                 Button debounce time in microseconds
 
-        config LED_BLINK_BRIGHTNESS
+        config GH_LED_BLINK_BRIGHTNESS
             int "LED Blink Brightness (0-255)"
             default 85
             help
                 Brightness of the status LED
     endmenu
 
-endmenu
-
-menu "ESP Zigbee DevKit LED Configuration"
-
-    config GPIO_LED_ON_DEVKIT
-        int "LED GPIO on devkit"
-        default 8 if IDF_TARGET_ESP32H2
-        default 8 if IDF_TARGET_ESP32C6
-        default 27 if IDF_TARGET_ESP32C5
-        default 8
-
-        help
-            The GPIO connected to the LED on the devkits
+    menu "DevKit LED Configuration"
+        config GH_GPIO_LED_ON_DEVKIT
+            int "LED GPIO on devkit"
+            default 8 if IDF_TARGET_ESP32H2
+            default 8 if IDF_TARGET_ESP32C6
+            default 27 if IDF_TARGET_ESP32C5
+            default 8
+            help
+                The GPIO connected to the LED on the devkits
+    endmenu
 
 endmenu

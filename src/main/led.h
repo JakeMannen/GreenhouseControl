@@ -18,7 +18,7 @@ extern "C" {
 #define LIGHT_DEFAULT_OFF 0
 
 /* LED strip configuration */
-#define CONFIG_EXAMPLE_STRIP_LED_GPIO   CONFIG_GPIO_LED_ON_DEVKIT
+#define CONFIG_EXAMPLE_STRIP_LED_GPIO   CONFIG_GH_GPIO_LED_ON_DEVKIT
 #define CONFIG_EXAMPLE_STRIP_LED_NUMBER 1
 
 /** Convert Hue,Saturation,V to RGB
