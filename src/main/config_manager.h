@@ -14,6 +14,7 @@ typedef struct {
     int32_t report_threshold_panel_mv;
     int32_t report_threshold_charge_current_ma;
     int32_t report_threshold_panel_power_w;
+    int32_t report_threshold_load_current_ma;
 
     // Reporting intervals
     int64_t report_interval_max_us; // e.g., 300,000,000 for 5 minutes

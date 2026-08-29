@@ -66,11 +66,13 @@ static void energy_change_handler(ve_direct_data_t *energy_data){
     
     const app_config_t* cfg = config_manager_get();
 
-    // Value threshold: 100mV battery, 500mV solar, 100mA current, or 2W power
+    // Value threshold: 100mV battery, 500mV solar, 100mA current, 2W power, or load changes
     if (abs(energy_data->battery_voltage_mv - last_reported.battery_voltage_mv) >= cfg->report_threshold_battery_mv) should_report = true;
     if (abs(energy_data->panel_voltage_mv - last_reported.panel_voltage_mv) >= cfg->report_threshold_panel_mv) should_report = true;
     if (abs(energy_data->charge_current_ma - last_reported.charge_current_ma) >= cfg->report_threshold_charge_current_ma) should_report = true;
     if (abs(energy_data->panel_power_w - last_reported.panel_power_w) >= cfg->report_threshold_panel_power_w) should_report = true;
+    if (abs(energy_data->load_current - last_reported.load_current) >= cfg->report_threshold_load_current_ma) should_report = true;
+    if (energy_data->load_output_state != last_reported.load_output_state) should_report = true;
 
     // Time threshold: Force report every 5 minutes (300,000,000 us)
     if (now - last_report_time >= cfg->report_interval_max_us) should_report = true;
@@ -167,9 +169,10 @@ void app_main(void) {
                     break;
 
                 case EVENT_TYPE_ENERGY:
-                    ESP_LOGI(TAG, "Reporting new energy data: Battery %d mV, Solar %d mV, %d mA, %d W", 
+                    ESP_LOGI(TAG, "Reporting new energy data: Battery %d mV, Solar %d mV, %d mA, %d W, Load %d mA (%s)", 
                              evt.data.energy.battery_voltage_mv, evt.data.energy.panel_voltage_mv, 
-                             evt.data.energy.charge_current_ma, evt.data.energy.panel_power_w);
+                             evt.data.energy.charge_current_ma, evt.data.energy.panel_power_w,
+                             evt.data.energy.load_current, evt.data.energy.load_output_state ? "ON" : "OFF");
 
                     uint8_t batt_val = (uint8_t)(evt.data.energy.battery_voltage_mv / 100);
                     int16_t sol_p = (int16_t)(evt.data.energy.panel_power_w * 10);
@@ -217,6 +220,19 @@ void app_main(void) {
                                            EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_ELECTRICAL_MEASUREMENT_ACTIVE_POWER_ID,
                                            EZB_ZCL_STD_MANUF_CODE, &sol_p, false);
                     zigbee_report_attribute(ZB_SOLAR_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ELECTRICAL_MEASUREMENT, EZB_ZCL_ATTR_ELECTRICAL_MEASUREMENT_ACTIVE_POWER_ID);
+
+                    bool load_on = (evt.data.energy.load_output_state != 0);
+                    uint16_t load_i_u16 = (uint16_t)(evt.data.energy.load_current / 10);
+
+                    ezb_zcl_set_attr_value(ZB_LOAD_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF,
+                                           EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_ON_OFF_ON_OFF_ID,
+                                           EZB_ZCL_STD_MANUF_CODE, &load_on, false);
+                    zigbee_report_attribute(ZB_LOAD_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF, EZB_ZCL_ATTR_ON_OFF_ON_OFF_ID);
+
+                    ezb_zcl_set_attr_value(ZB_LOAD_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ELECTRICAL_MEASUREMENT,
+                                           EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_ELECTRICAL_MEASUREMENT_RMS_CURRENT_ID,
+                                           EZB_ZCL_STD_MANUF_CODE, &load_i_u16, false);
+                    zigbee_report_attribute(ZB_LOAD_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ELECTRICAL_MEASUREMENT, EZB_ZCL_ATTR_ELECTRICAL_MEASUREMENT_RMS_CURRENT_ID);
                     esp_zigbee_lock_release();
                     break;
 

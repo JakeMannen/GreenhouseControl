@@ -15,6 +15,7 @@ extern "C" {
 #define ZB_PUMP_1_ENDPOINT_ID       1
 #define ZB_CLIMATE_ENDPOINT_ID      2
 #define ZB_SOLAR_ENDPOINT_ID        3
+#define ZB_LOAD_ENDPOINT_ID         4
 
 #define ZB_PRIMARY_CHANNEL_MASK    (1U << 13)
 #define ZB_SECONDARY_CHANNEL_MASK  (0x07FFF800U)

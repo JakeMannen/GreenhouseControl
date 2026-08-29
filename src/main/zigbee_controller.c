@@ -290,6 +290,43 @@ static esp_err_t zb_register_solar_endpoint(ezb_af_device_desc_t device_desc)
     return ESP_OK;
 }
 
+static esp_err_t zb_register_load_endpoint(ezb_af_device_desc_t device_desc)
+{
+    // Create the Load endpoint configuration
+    ezb_af_ep_config_t load_ep_config = {
+        .ep_id              = ZB_LOAD_ENDPOINT_ID,
+        .app_profile_id     = EZB_AF_HA_PROFILE_ID,
+    };
+
+    // Create the Load endpoint
+    ezb_af_ep_desc_t load_ep_desc = ezb_af_create_endpoint_desc(&load_ep_config);
+
+    // Create load on/off cluster configuration
+    static ezb_zcl_on_off_cluster_config_t load_onoff_cfg = {
+        .on_off = false,
+    };
+    ezb_zcl_cluster_desc_t on_off_cluster = ezb_zcl_on_off_create_cluster_desc(&load_onoff_cfg, EZB_ZCL_CLUSTER_SERVER);
+    ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(load_ep_desc, on_off_cluster), TAG, "add load on/off cluster failed");
+
+    // Create Electrical Measurement cluster
+    ezb_zcl_cluster_desc_t em_cluster = ezb_zcl_electrical_measurement_create_cluster_desc(NULL, EZB_ZCL_CLUSTER_SERVER);
+
+    static uint16_t default_u16 = 0;
+    static uint32_t default_type = EZB_ZCL_ELECTRICAL_MEASUREMENT_MEASUREMENT_TYPE_DC_MEASUREMENT;
+    static uint16_t mult_1 = 1;
+    static uint16_t div_100 = 100;
+
+    ezb_zcl_electrical_measurement_cluster_desc_add_attr(em_cluster, EZB_ZCL_ATTR_ELECTRICAL_MEASUREMENT_MEASUREMENT_TYPE_ID, &default_type);
+    ezb_zcl_electrical_measurement_cluster_desc_add_attr(em_cluster, EZB_ZCL_ATTR_ELECTRICAL_MEASUREMENT_RMS_CURRENT_ID, &default_u16);
+    ezb_zcl_electrical_measurement_cluster_desc_add_attr(em_cluster, EZB_ZCL_ATTR_ELECTRICAL_MEASUREMENT_AC_CURRENT_MULTIPLIER_ID, &mult_1);
+    ezb_zcl_electrical_measurement_cluster_desc_add_attr(em_cluster, EZB_ZCL_ATTR_ELECTRICAL_MEASUREMENT_AC_CURRENT_DIVISOR_ID, &div_100);
+
+    ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(load_ep_desc, em_cluster), TAG, "add load electrical measurement cluster failed");
+
+    ESP_RETURN_ON_ERROR(ezb_af_device_add_endpoint_desc(device_desc, load_ep_desc), TAG, "add load endpoint failed");
+    return ESP_OK;
+}
+
 static esp_err_t zb_register_endpoints(void)
 {
 
@@ -304,6 +341,9 @@ static esp_err_t zb_register_endpoints(void)
 
     // Create the Solar (Electrical Measurement) endpoint
     zb_register_solar_endpoint(device_desc);
+
+    // Create the Load endpoint
+    zb_register_load_endpoint(device_desc);
 
     ESP_RETURN_ON_ERROR(ezb_af_device_desc_register(device_desc), TAG, "register device failed");
     ezb_zcl_core_action_handler_register(zb_zcl_action_handler);

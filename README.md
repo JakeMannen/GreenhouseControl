@@ -55,7 +55,7 @@ devcontainer exec idf.py menuconfig
 
 ## Zigbee Endpoints & Clusters
 
-The controller exposes three endpoints under the Zigbee Home Automation (HA) profile (`0x0104`):
+The controller exposes four endpoints under the Zigbee Home Automation (HA) profile (`0x0104`):
 
 ### Endpoint 1: Pump & System Control
 * **Endpoint ID**: `1`
@@ -81,6 +81,14 @@ The controller exposes three endpoints under the Zigbee Home Automation (HA) pro
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
 | `0x0B04` | Electrical Measurement | `0x0000` (MeasurementType = DC)<br>`0x0505` (RMSVoltage)<br>`0x0508` (RMSCurrent)<br>`0x050B` (ActivePower)<br>`0x0600`/`0x0601` (Voltage Multiplier / Divisor)<br>`0x0602`/`0x0603` (Current Multiplier / Divisor)<br>`0x0604`/`0x0605` (Power Multiplier / Divisor) | Victron VE.Direct solar panel telemetry (Panel/Battery Voltage in V, Current in A, Power in W) |
+
+### Endpoint 4: Load Output & Current Monitoring
+* **Endpoint ID**: `4`
+
+| Cluster ID | Cluster Name | Attributes | Description |
+|---|---|---|---|
+| `0x0006` | On/Off | `0x0000` (OnOff) | Victron VE.Direct Load Output state (`LOAD` - ON / OFF) |
+| `0x0B04` | Electrical Measurement | `0x0000` (MeasurementType = DC)<br>`0x0508` (RMSCurrent)<br>`0x0602`/`0x0603` (Current Multiplier / Divisor) | Victron VE.Direct Load Current (`IL` in A) |
 
 ## Home Assistant Zigbee2Mqtt external converter
 As this is a highly customized device it does not belong in the official Zigbee2Mqtt repository of supported devices.
