@@ -11,5 +11,6 @@
   ],
   "idf.portWin": "COM4",
   "idf.currentSetup": "/opt/esp/idf",
-  "cmake.sourceDirectory": "C:/Users/jocke/AgentWorkspaces/GreenhouseControl/src",
+  "cmake.sourceDirectory": "${workspaceFolder}/src"
 }
+

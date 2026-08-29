@@ -32,3 +32,4 @@
   },
   "postCreateCommand": "echo '. /opt/esp/idf/export.sh' >> ~/.bashrc"
 }
+
