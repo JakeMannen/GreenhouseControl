@@ -10,6 +10,8 @@
 #include "esp_zigbee.h"
 #include "ezbee/zha.h"
 #include "ezbee/zcl.h"
+#include "ezbee/zcl/cluster/ota_upgrade.h"
+#include "ezbee/zcl/cluster/ota_upgrade_desc.h"
 #include "led.h"
 
 static const char *TAG = "ZB_CONTROLLER";
@@ -218,6 +220,17 @@ static esp_err_t zb_register_pump_endpoint(ezb_af_device_desc_t device_desc)
     // Add pump on/off cluster description to pump endpoint
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, on_off_cluster), TAG, "add pump 1 on/off cluster failed");
 
+    // Create OTA Upgrade client config
+    static ezb_zcl_ota_upgrade_cluster_client_config_t ota_client_config = {
+        .upgrade_server_id = 0xFFFFFFFFFFFFFFFF, // default
+        .file_offset = 0,
+        .image_upgrade_status = 0, // EZB_ZCL_OTA_UPGRADE_STATUS_NORMAL
+        .manufacturer_id = 0x1001,
+        .image_type_id = 0x1011,
+    };
+    ezb_zcl_cluster_desc_t ota_cluster = ezb_zcl_ota_upgrade_create_cluster_desc(&ota_client_config, EZB_ZCL_CLUSTER_CLIENT);
+    ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, ota_cluster), TAG, "add ota cluster failed");
+
     // Add power config cluster to report battery voltage and percentage
     ezb_zcl_cluster_desc_t power_cluster = ezb_zcl_power_config_create_cluster_desc(NULL, EZB_ZCL_CLUSTER_SERVER);
     static uint8_t battery_voltage = 0xFF;
@@ -370,6 +383,7 @@ static void zb_main_task(void *arg)
     ESP_ERROR_CHECK(ezb_app_signal_add_handler(zb_app_signal_handler));
 
     ESP_ERROR_CHECK(zb_register_endpoints());
+    ezb_zcl_ota_upgrade_cluster_client_init(ZB_PUMP_1_ENDPOINT_ID);
 
     ESP_ERROR_CHECK(esp_zigbee_start(false));
 

@@ -1,0 +1,61 @@
+name: Build and Release OTA Firmware
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to create releases
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Semantic Version
+        id: semver
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "(MAJOR)"
+          minor_pattern: "(MINOR)"
+          version_format: "${major}.${minor}.${patch}-prerelease${increment}"
+
+      - name: Convert Version to Zigbee Format
+        id: hexver
+        run: |
+          MAJOR=${{ steps.semver.outputs.major }}
+          MINOR=${{ steps.semver.outputs.minor }}
+          PATCH=${{ steps.semver.outputs.patch }}
+          # Zigbee File Version Format: uint32 (Major, Minor, Patch, Reserved)
+          HEX_VER=$(printf "0x%02x%02x%02x00" $MAJOR $MINOR $PATCH)
+          echo "OTA_FILE_VERSION=$HEX_VER" >> $GITHUB_ENV
+          echo "Semantic version converted to $HEX_VER"
+
+      - name: Build Firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          target: esp32c6
+          path: 'src'
+          esp_idf_version: latest
+
+      - name: Upload Artifacts to Workflow Run
+        uses: actions/upload-artifact@v4
+        with:
+          name: greenhouse-firmware-v${{ steps.semver.outputs.version }}
+          path: |
+            src/build/greenhouse_controller.bin
+            src/build/*-ota-file.ota
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.semver.outputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          files: src/build/*-ota-file.ota
