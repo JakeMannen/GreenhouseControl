@@ -6,12 +6,11 @@
 
 static const char *TAG = "SHT30";
 
-// We save the device handle globally (or statically) so the read function can use it
-static i2c_master_dev_handle_t g_sht30_dev_handle = NULL;
-climate_report_callback_t climate_report;
+static i2c_master_dev_handle_t s_sht30_dev_handle = NULL;
+static climate_report_callback_t s_climate_report_cb = NULL;
 
-int16_t temperature_value = -25000;
-int16_t humidity_value = -20000;
+static int16_t s_temperature_value = -25000;
+static int16_t s_humidity_value = -20000;
 
 // CRC-8 calculation with polynomial 0x31 (x^8 + x^5 + x^4 + 1), Initial value: 0xFF
 uint8_t sht30_crc8(const uint8_t *data, size_t len) {
@@ -31,7 +30,7 @@ uint8_t sht30_crc8(const uint8_t *data, size_t len) {
 
 esp_err_t sht30_read_temp_humi(gh_climate_data_t *climate_data) {
 
-    if (g_sht30_dev_handle == NULL) {
+    if (s_sht30_dev_handle == NULL) {
         ESP_LOGE(TAG, "Sensor not initialized!");
         return ESP_ERR_INVALID_STATE;
     }
@@ -40,7 +39,7 @@ esp_err_t sht30_read_temp_humi(gh_climate_data_t *climate_data) {
     uint8_t cmd[2] = {0x24, 0x0B};
     
     // 1. Write measure command to sensor
-    esp_err_t err = i2c_master_transmit(g_sht30_dev_handle, cmd, sizeof(cmd), pdMS_TO_TICKS(100));
+    esp_err_t err = i2c_master_transmit(s_sht30_dev_handle, cmd, sizeof(cmd), pdMS_TO_TICKS(100));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to send command to sensor: %s", esp_err_to_name(err));
         return err;
@@ -52,7 +51,7 @@ esp_err_t sht30_read_temp_humi(gh_climate_data_t *climate_data) {
     // 3. Read 6 bytes
     // Format: [Temp MSB][Temp LSB][Temp CRC][Humi MSB][Humi LSB][Humi CRC]
     uint8_t data[6] = {0};
-    err = i2c_master_receive(g_sht30_dev_handle, data, sizeof(data), pdMS_TO_TICKS(100));
+    err = i2c_master_receive(s_sht30_dev_handle, data, sizeof(data), pdMS_TO_TICKS(100));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read data from SHT30: %s", esp_err_to_name(err));
         return err;
@@ -74,46 +73,41 @@ esp_err_t sht30_read_temp_humi(gh_climate_data_t *climate_data) {
     uint16_t raw_temp = (data[0] << 8) | data[1];
     uint16_t raw_humi = (data[3] << 8) | data[4];
 
-    //temperature_value = -45.0f + 175.0f * ((float)raw_temp / 65535.0f);
-    //humidity_value = 100.0f * ((float)raw_humi / 65535.0f);
-    temperature_value = (int16_t)(-4500 + ((17500UL * raw_temp) / 65535UL));
-    humidity_value = (int16_t)((10000UL * raw_humi) / 65535UL);
+    s_temperature_value = (int16_t)(-4500 + ((17500UL * raw_temp) / 65535UL));
+    s_humidity_value = (int16_t)((10000UL * raw_humi) / 65535UL);
 
-    ESP_LOGD(TAG, "Read values - Temp: %.2f C, Humi: %.2f %%", (float)temperature_value/100.0f, (float)humidity_value/100.0f);
+    ESP_LOGD(TAG, "Read values - Temp: %.2f C, Humi: %.2f %%", (float)s_temperature_value/100.0f, (float)s_humidity_value/100.0f);
 
     climate_data->previous_temperature = climate_data->temperature;
     climate_data->previous_humidity = climate_data->humidity;
-    climate_data->temperature = temperature_value;
-    climate_data->humidity = humidity_value;
+    climate_data->temperature = s_temperature_value;
+    climate_data->humidity = s_humidity_value;
     return ESP_OK;
 }
 
-void sensor_read_loop(void *arg){
+static void sht30_read_task(void *arg) {
+    gh_climate_data_t climate_data = {0};
 
-    gh_climate_data_t *climate_data = malloc(sizeof(gh_climate_data_t));
+    while (true) {
+        esp_err_t err = sht30_read_temp_humi(&climate_data);
 
-    while(true){
-        esp_err_t err = sht30_read_temp_humi(climate_data);
-
-        if(err != ESP_OK){
+        if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to read data from SHT30: %s", esp_err_to_name(err));
-            vTaskDelay(pdMS_TO_TICKS(CONFIG_SHT30_POLL_INTERVAL_MS));
+            vTaskDelay(pdMS_TO_TICKS(CONFIG_GH_SHT30_POLL_INTERVAL_MS));
             continue;
         }
 
-        if(climate_report != NULL){
-            climate_report(climate_data);
+        if (s_climate_report_cb != NULL) {
+            s_climate_report_cb(&climate_data);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(CONFIG_SHT30_POLL_INTERVAL_MS));
+        vTaskDelay(pdMS_TO_TICKS(CONFIG_GH_SHT30_POLL_INTERVAL_MS));
     }
-
-    free(climate_data);
 }
 
 esp_err_t sht30_init(i2c_port_t port, gpio_num_t sda_pin, gpio_num_t scl_pin, climate_report_callback_t report_cb) {
 
-    climate_report = report_cb;
+    s_climate_report_cb = report_cb;
 
     // 1. Configure and initialize I2C-bus (Master Bus)
     i2c_master_bus_config_t bus_config = {
@@ -139,13 +133,13 @@ esp_err_t sht30_init(i2c_port_t port, gpio_num_t sda_pin, gpio_num_t scl_pin, cl
         .scl_speed_hz = SHT30_I2C_SPEED_HZ,
     };
 
-    err = i2c_master_bus_add_device(bus_handle, &dev_config, &g_sht30_dev_handle);
+    err = i2c_master_bus_add_device(bus_handle, &dev_config, &s_sht30_dev_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add SHT30 to I2C bus: %s", esp_err_to_name(err));
         return err;
     }
 
-    xTaskCreate(sensor_read_loop, "read_temp_humi_task", 3072, NULL, 8, NULL);
+    xTaskCreate(sht30_read_task, "sht30_read_task", 3072, NULL, 8, NULL);
     ESP_LOGI(TAG, "SHT30 initialized successfully on port %d (SDA:%d, SCL:%d)", port, sda_pin, scl_pin);
     return ESP_OK;
 }

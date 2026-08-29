@@ -13,5 +13,5 @@ idf_component_register(
     "main.c"
 
     INCLUDE_DIRS "." # Any necessary includes from this local component
-    REQUIRES driver nvs_flash esp_timer esp_driver_i2c led_strip esp-zigbee-lib
+    PRIV_REQUIRES driver nvs_flash esp_timer esp_driver_i2c led_strip esp-zigbee-lib
 )

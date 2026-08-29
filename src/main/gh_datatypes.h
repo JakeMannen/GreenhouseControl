@@ -1,6 +1,11 @@
 #pragma once
 
+#include <stdint.h>
 #include "ve_direct.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct {
     int16_t temperature;
@@ -10,3 +15,7 @@ typedef struct {
 } gh_climate_data_t;
 
 typedef void (*climate_report_callback_t)(gh_climate_data_t *data);
+
+#ifdef __cplusplus
+}
+#endif

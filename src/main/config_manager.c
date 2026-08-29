@@ -6,7 +6,7 @@
 static const char *TAG = "CONFIG_MANAGER";
 static const char *NVS_NAMESPACE = "gh_config";
 
-static app_config_t g_config;
+static app_config_t s_config;
 
 static void set_default_config(app_config_t *cfg) {
     cfg->report_threshold_battery_mv = 100;
@@ -34,12 +34,12 @@ esp_err_t config_manager_init(void) {
     }
 
     size_t required_size = sizeof(app_config_t);
-    err = nvs_get_blob(nvs_handle, "app_cfg", &g_config, &required_size);
+    err = nvs_get_blob(nvs_handle, "app_cfg", &s_config, &required_size);
     if (err == ESP_ERR_NVS_NOT_FOUND || required_size != sizeof(app_config_t)) {
         ESP_LOGI(TAG, "Configuration not found or size changed, creating defaults...");
-        set_default_config(&g_config);
+        set_default_config(&s_config);
         
-        err = nvs_set_blob(nvs_handle, "app_cfg", &g_config, sizeof(app_config_t));
+        err = nvs_set_blob(nvs_handle, "app_cfg", &s_config, sizeof(app_config_t));
         if (err == ESP_OK) {
             nvs_commit(nvs_handle);
             ESP_LOGI(TAG, "Default configuration saved");
@@ -48,7 +48,7 @@ esp_err_t config_manager_init(void) {
         }
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error reading config from NVS: %s", esp_err_to_name(err));
-        set_default_config(&g_config);
+        set_default_config(&s_config);
     } else {
         ESP_LOGI(TAG, "Configuration loaded successfully from NVS");
     }
@@ -58,7 +58,7 @@ esp_err_t config_manager_init(void) {
 }
 
 const app_config_t* config_manager_get(void) {
-    return &g_config;
+    return &s_config;
 }
 
 esp_err_t config_manager_save(const app_config_t *new_config) {
@@ -68,9 +68,9 @@ esp_err_t config_manager_save(const app_config_t *new_config) {
         return err;
     }
 
-    g_config = *new_config;
+    s_config = *new_config;
 
-    err = nvs_set_blob(nvs_handle, "app_cfg", &g_config, sizeof(app_config_t));
+    err = nvs_set_blob(nvs_handle, "app_cfg", &s_config, sizeof(app_config_t));
     if (err == ESP_OK) {
         err = nvs_commit(nvs_handle);
     }

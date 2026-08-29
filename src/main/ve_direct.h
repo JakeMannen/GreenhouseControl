@@ -1,10 +1,15 @@
-#ifndef VE_DIRECT_H
-#define VE_DIRECT_H
+#pragma once
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "esp_err.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
 #include "gh_datatypes.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define VE_DIRECT_UART_PORT    UART_NUM_1
 #define VE_DIRECT_BAUD_RATE    19200
@@ -12,7 +17,7 @@
 
 #define VE_INVERT_SIGNAL       1
 
-// RX GPIO is now configured via Kconfig
+// RX GPIO is configured via Kconfig
 
 #define BATTERY_VOLTAGE        "V"
 #define BATTERY_CURRENT        "I"
@@ -54,7 +59,7 @@ typedef void (*energy_report_callback_t)(ve_direct_data_t *data);
  * 
  * @param port UART port number
  * @param rx_pin GPIO pin for RX (connected to VE.Direct TX)
- * @param energy_report_callback_t Callback function to report data
+ * @param energy_cb Callback function to report data
  * @return esp_err_t ESP_OK on success, error code otherwise
  */
 esp_err_t ve_direct_init(uart_port_t port, gpio_num_t rx_pin, energy_report_callback_t energy_cb);
@@ -71,4 +76,7 @@ bool ve_direct_get_data(ve_direct_data_t *data);
 void ve_direct_parse_line(const char *label, const char *value, ve_direct_data_t *temp_data);
 esp_err_t ve_direct_finalize_block(ve_direct_data_t *temp_data, uint8_t checksum);
 
-#endif // VE_DIRECT_H
+#ifdef __cplusplus
+}
+#endif
+

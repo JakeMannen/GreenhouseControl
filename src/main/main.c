@@ -31,7 +31,7 @@ typedef struct {
     } data;
 } app_event_t;
 
-static QueueHandle_t app_event_queue = NULL;
+static QueueHandle_t s_app_event_queue = NULL;
 
 /**
  * @brief Callback triggered when the SHT30 sensor reports new climate data.
@@ -46,7 +46,7 @@ static void climate_change_handler(gh_climate_data_t *climate_data){
         .type = EVENT_TYPE_CLIMATE,
         .data.climate = *climate_data
     };
-    xQueueSend(app_event_queue, &evt, 0);
+    xQueueSend(s_app_event_queue, &evt, 0);
 }
 
 /**
@@ -92,7 +92,7 @@ static void energy_change_handler(ve_direct_data_t *energy_data){
         .type = EVENT_TYPE_ENERGY,
         .data.energy = *energy_data
     };
-    xQueueSend(app_event_queue, &evt, 0);
+    xQueueSend(s_app_event_queue, &evt, 0);
 }
 
 /**
@@ -109,25 +109,31 @@ static void pump_state_changed_handler(bool is_on) {
         .type = EVENT_TYPE_PUMP,
         .data.pump_is_on = is_on
     };
-    xQueueSend(app_event_queue, &evt, 0);
+    xQueueSend(s_app_event_queue, &evt, 0);
 }
 
 void app_main(void) {
 
     ESP_LOGI(TAG, "Initializing Greenhouse Controller...");
 
-    ESP_ERROR_CHECK(nvs_flash_init());
-    ESP_ERROR_CHECK(nvs_flash_init_partition("zb_storage"));
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    ret = nvs_flash_init_partition("zb_storage");
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase_partition("zb_storage"));
+        ret = nvs_flash_init_partition("zb_storage");
+    }
+    ESP_ERROR_CHECK(ret);
     
     ESP_ERROR_CHECK(config_manager_init());
 
-    // if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    //    ESP_ERROR_CHECK(nvs_flash_erase());
-    //    err = nvs_flash_init();
-    //}
-
-    app_event_queue = xQueueCreate(20, sizeof(app_event_t));
-    if (app_event_queue == NULL) {
+    s_app_event_queue = xQueueCreate(20, sizeof(app_event_t));
+    if (s_app_event_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create app event queue");
         return;
     }
@@ -137,13 +143,13 @@ void app_main(void) {
     ESP_ERROR_CHECK(zigbee_controller_init()); // Start Zigbee in its own task
     light_driver_init(LIGHT_DEFAULT_OFF); // Initialize LED controller
     ESP_ERROR_CHECK(gpio_drivers_init(pump_state_changed_handler)); // Initialize GPIO drivers
-    ESP_ERROR_CHECK(sht30_init(SHT30_I2C_PORT, CONFIG_SHT30_SDA_PIN, CONFIG_SHT30_SCL_PIN, climate_change_handler));
-    ESP_ERROR_CHECK(ve_direct_init(VE_DIRECT_UART_PORT, CONFIG_VE_DIRECT_RX_PIN, energy_change_handler));
+    ESP_ERROR_CHECK(sht30_init(SHT30_I2C_PORT, CONFIG_GH_SHT30_SDA_PIN, CONFIG_GH_SHT30_SCL_PIN, climate_change_handler));
+    ESP_ERROR_CHECK(ve_direct_init(VE_DIRECT_UART_PORT, CONFIG_GH_VE_DIRECT_RX_PIN, energy_change_handler));
     
     app_event_t evt;
     const app_config_t* cfg = config_manager_get();
     while (true) {
-        if (xQueueReceive(app_event_queue, &evt, portMAX_DELAY)) {
+        if (xQueueReceive(s_app_event_queue, &evt, portMAX_DELAY)) {
             switch (evt.type) {
                 case EVENT_TYPE_CLIMATE:
                     ESP_LOGI(TAG, "Reporting new climate data");
