@@ -1,0 +1,136 @@
+#include "gpio_controller.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/timers.h"
+
+static const char *TAG = "GPIO_DRV";
+
+static void (*g_pump_state_changed_cb)(bool is_on) = NULL;
+static TimerHandle_t g_safety_timer = NULL;
+static QueueHandle_t g_gpio_evt_queue = NULL;
+static bool g_pump_state = false;
+static int64_t g_last_btn_press_time = 0;
+
+static void safety_timer_callback(TimerHandle_t xTimer) {
+    ESP_LOGW(TAG, "Pump safety timeout reached! Automatically shutting off pump.");
+    gpio_set_pump_state(false);
+}
+
+static void IRAM_ATTR gpio_isr_handler(void* arg) {
+    uint32_t gpio_num = (uint32_t)arg;
+    xQueueSendFromISR(g_gpio_evt_queue, &gpio_num, NULL);
+}
+
+static void gpio_button_task(void* arg) {
+    uint32_t io_num;
+    while (1) {
+        if (xQueueReceive(g_gpio_evt_queue, &io_num, portMAX_DELAY)) {
+            if (io_num == CONFIG_BUTTON_GPIO_PIN) {
+                int64_t now = esp_timer_get_time(); // Time in microseconds
+                // Debounce time from Kconfig
+                if (now - g_last_btn_press_time > CONFIG_BUTTON_DEBOUNCE_US) {
+                    g_last_btn_press_time = now;
+                    ESP_LOGI(TAG, "Button pressed! Toggling pump state.");
+                    gpio_set_pump_state(!g_pump_state);
+                }
+            }
+        }
+    }
+}
+
+esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on)) {
+    g_pump_state_changed_cb = pump_state_changed_cb;
+
+    // Configure pump pin (Output, pull-down enabled, active high)
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << CONFIG_PUMP_GPIO_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+    gpio_set_level(CONFIG_PUMP_GPIO_PIN, 0); // Start with pump off
+    g_pump_state = false;
+
+    // Configure button pin (Input, pull-up, interrupt on falling edge)
+    io_conf.pin_bit_mask = (1ULL << CONFIG_BUTTON_GPIO_PIN);
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.intr_type = GPIO_INTR_NEGEDGE;
+    gpio_config(&io_conf);
+
+    // Create event queue for GPIO ISR
+    g_gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    if (g_gpio_evt_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create GPIO event queue");
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Start GPIO button task
+    xTaskCreate(gpio_button_task, "gpio_button_task", 3072, NULL, 10, NULL);
+
+    // Install GPIO ISR service
+    esp_err_t err = gpio_install_isr_service(0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Add ISR handler for button GPIO pin
+    err = gpio_isr_handler_add(CONFIG_BUTTON_GPIO_PIN, gpio_isr_handler, (void*)CONFIG_BUTTON_GPIO_PIN);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add button ISR handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Create FreeRTOS timer for pump safety timeout
+    g_safety_timer = xTimerCreate("pump_safety_timer",
+                                  pdMS_TO_TICKS(CONFIG_PUMP_SAFETY_TIMEOUT_MIN * 60 * 1000),
+                                  pdFALSE, // One-shot
+                                  (void*)0,
+                                  safety_timer_callback);
+    if (g_safety_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create pump safety timer");
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "GPIO driver initialized successfully");
+    return ESP_OK;
+}
+
+void gpio_set_pump_state(bool is_on) {
+    if (g_pump_state == is_on) {
+        return; // State already matches
+    }
+
+    g_pump_state = is_on;
+    gpio_set_level(CONFIG_PUMP_GPIO_PIN, is_on ? 1 : 0);
+    ESP_LOGI(TAG, "Pump hardware set to %s", is_on ? "ON (GPIO high)" : "OFF (GPIO low)");
+
+    if (is_on) {
+        if (g_safety_timer != NULL) {
+            xTimerStart(g_safety_timer, 0);
+            ESP_LOGI(TAG, "Pump safety timer started for %d minutes", CONFIG_PUMP_SAFETY_TIMEOUT_MIN);
+        }
+    } else {
+        if (g_safety_timer != NULL) {
+            xTimerStop(g_safety_timer, 0);
+            ESP_LOGI(TAG, "Pump safety timer stopped");
+        }
+    }
+
+    // Notify listeners of state change
+    if (g_pump_state_changed_cb != NULL) {
+        g_pump_state_changed_cb(is_on);
+    }
+}
+
+bool gpio_get_pump_state(void) {
+    return g_pump_state;
+}

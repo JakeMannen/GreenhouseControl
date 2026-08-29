@@ -1,0 +1,121 @@
+const fz = require('zigbee-herdsman-converters/converters/fromZigbee');
+const tz = require('zigbee-herdsman-converters/converters/toZigbee');
+const exposes = require('zigbee-herdsman-converters/lib/exposes');
+const e = exposes.presets;
+const ea = exposes.access;
+
+const definition = {
+    // Matches the Model ID we configured in the Basic Cluster on Endpoint 1
+    zigbeeModel: ['GreenHouse Controller'],
+    model: 'GreenhouseController',
+    vendor: 'Espressif',
+    description: 'Solar Powered Greenhouse Irrigation & Environmental Monitor',
+    
+    // Convert incoming Zigbee reports to Home Assistant states
+    fromZigbee: [
+        {
+            cluster: 'genOnOff',
+            type: ['attributeReport', 'readResponse'],
+            convert: (model, msg, publish, options, meta) => {
+                if (msg.data.hasOwnProperty('onOff')) {
+                    return { pump_1: msg.data['onOff'] === 1 ? 'ON' : 'OFF' };
+                }
+            },
+        },
+        fz.temperature,
+        fz.humidity,
+        {
+            cluster: 'genPowerCfg',
+            type: ['attributeReport', 'readResponse'],
+            convert: (model, msg, publish, options, meta) => {
+                const result = {};
+                // Battery Voltage (0x0020 = 32)
+                if (msg.data.hasOwnProperty('batteryVoltage') || msg.data.hasOwnProperty(32)) {
+                    let val = msg.data['batteryVoltage'] !== undefined ? msg.data['batteryVoltage'] : msg.data[32];
+                    result.battery_voltage = val / 10.0;
+                }
+                // Battery Percentage (0x0021 = 33)
+                if (msg.data.hasOwnProperty('batteryPercentageRemaining') || msg.data.hasOwnProperty(33)) {
+                    let val = msg.data['batteryPercentageRemaining'] !== undefined ? msg.data['batteryPercentageRemaining'] : msg.data[33];
+                    if (val !== 255) {
+                        result.battery = val / 2.0;
+                    }
+                }
+                return Object.keys(result).length > 0 ? result : undefined;
+            },
+        },
+        {
+            cluster: 'haElectricalMeasurement',
+            type: ['attributeReport', 'readResponse'],
+            convert: (model, msg, publish, options, meta) => {
+                const result = {};
+                // We switched the firmware to use RMS Voltage (1285), RMS Current (1288), and Active Power (1291)
+                if (msg.data.hasOwnProperty('rmsVoltage') || msg.data.hasOwnProperty(1285)) {
+                    let val = msg.data['rmsVoltage'] !== undefined ? msg.data['rmsVoltage'] : msg.data[1285];
+                    result.solar_voltage = val / 100.0;
+                }
+                if (msg.data.hasOwnProperty('rmsCurrent') || msg.data.hasOwnProperty(1288)) {
+                    let val = msg.data['rmsCurrent'] !== undefined ? msg.data['rmsCurrent'] : msg.data[1288];
+                    result.solar_current = val / 100.0;
+                }
+                if (msg.data.hasOwnProperty('activePower') || msg.data.hasOwnProperty(1291)) {
+                    let val = msg.data['activePower'] !== undefined ? msg.data['activePower'] : msg.data[1291];
+                    result.solar_power = val / 10.0;
+                }
+                return Object.keys(result).length > 0 ? result : undefined;
+            },
+        }
+    ],
+    
+    configure: async (device, coordinatorEndpoint) => {
+        const endpoint_pump = device.getEndpoint(1);
+        const endpoint_climate = device.getEndpoint(2);
+        const endpoint_solar = device.getEndpoint(3);
+        
+        // Bind all clusters so the coordinator receives the reports
+        await endpoint_pump.bind('genOnOff', coordinatorEndpoint);
+        await endpoint_pump.bind('genPowerCfg', coordinatorEndpoint);
+        await endpoint_climate.bind('msTemperatureMeasurement', coordinatorEndpoint);
+        await endpoint_climate.bind('msRelativeHumidity', coordinatorEndpoint);
+        await endpoint_solar.bind('haElectricalMeasurement', coordinatorEndpoint);
+
+        // Force configure reporting for the battery cluster
+        try {
+            await endpoint_pump.configureReporting('genPowerCfg', [
+                {attribute: 'batteryVoltage', minimumReportInterval: 10, maximumReportInterval: 3600, reportableChange: 1},
+                {attribute: 'batteryPercentageRemaining', minimumReportInterval: 10, maximumReportInterval: 3600, reportableChange: 1}
+            ]);
+        } catch (e) {
+            console.error(`Failed to configure battery reporting: ${e}`);
+        }
+    },
+    
+    // Convert Home Assistant commands to outgoing Zigbee packets
+    toZigbee: [
+        {
+            key: ['pump_1'],
+            convertSet: async (entity, key, value, meta) => {
+                const state = value.toLowerCase() === 'on' ? 'on' : 'off';
+                await entity.command('genOnOff', state, {}, meta.options);
+                return { state: { pump_1: value.toUpperCase() } };
+            },
+            convertGet: async (entity, key, meta) => {
+                await entity.read('genOnOff', ['onOff']);
+            },
+        }
+    ],
+    
+    // Expose entities to Home Assistant
+    exposes: [
+        exposes.binary('pump_1', ea.ALL, 'ON', 'OFF').withValueToggle('TOGGLE').withDescription('Pump 1'),
+        e.temperature().withDescription('Temperature'),
+        e.humidity().withDescription('Humidity'),
+        e.numeric('battery', ea.STATE).withUnit('%').withDescription('Battery Percentage'),
+        e.numeric('battery_voltage', ea.STATE).withUnit('V').withDescription('Battery Voltage'),
+        e.numeric('solar_power', ea.STATE).withUnit('W').withDescription('Solar Power'),
+        e.numeric('solar_voltage', ea.STATE).withUnit('V').withDescription('Solar Voltage'),
+        e.numeric('solar_current', ea.STATE).withUnit('A').withDescription('Solar Current')
+    ],
+};
+
+module.exports = definition;
