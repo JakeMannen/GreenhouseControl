@@ -25,7 +25,7 @@
         "idf.pythonBinPath": "/opt/esp/python_env/idf6.1_py3.12_env/bin/python",
         "idf.port": "/dev/ttyACM0",
         "idf.flashType": "UART",
-        "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+        "C_Cpp.default.compileCommands": "${workspaceFolder}/src/build/compile_commands.json",
         "C_Cpp.intelliSenseEngine": "default"
       }
     }

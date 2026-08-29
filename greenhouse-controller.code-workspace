@@ -14,4 +14,3 @@
     "C_Cpp.default.compileCommands": "${workspaceFolder:Firmware (src)}/build/compile_commands.json"
   }
 }
-
