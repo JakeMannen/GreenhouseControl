@@ -22,9 +22,9 @@ This is a ESP-IDF embedded system project for a greenhouse irrigation controller
 - Add tests for new introduced or changed code when possible
 
 ## Git
-- NEVER push changes to main branch
-- You must create a new branch from main when you are ready to commit and push a new feature. Make sure to fetch latest changes from main first
-- Use short descriptive PR titles that reflects the changes
+- NEVER push changes to **main** or **dev** branches
+- You must create a new branch named 'feat/<descriptive_branch_name>' originating from **dev** when you are ready to commit and push a new feature. Make sure to fetch latest changes from **dev** first
+- Use short descriptive PR titles that reflects the changes with required conventional commit title and summary of changes in description
 - Run tests and verify project builds before commiting changes
 
 ## Executing commands
