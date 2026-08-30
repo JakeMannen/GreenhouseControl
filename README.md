@@ -66,6 +66,7 @@ The controller exposes four endpoints under the Zigbee Home Automation (HA) prof
 | `0x0000` | Basic | `0x0000` (ZCL Version)<br>`0x0003` (HW Version)<br>`0x0004` (Manufacturer Name)<br>`0x0005` (Model Identifier)<br>`0x0007` (Power Source) | Device metadata and power source (`Battery`) |
 | `0x0006` | On/Off | `0x0000` (OnOff) | Water pump 1 output control (ON / OFF) |
 | `0x0001` | Power Configuration | `0x0020` (BatteryVoltage)<br>`0x0021` (BatteryPercentageRemaining) | Battery voltage (in 100mV units) and state of charge percentage |
+| `0x0019` | OTA Upgrade (Client) | - | Over-The-Air firmware updates |
 
 ### Endpoint 2: Climate & Environment
 * **Endpoint ID**: `2`
@@ -89,6 +90,20 @@ The controller exposes four endpoints under the Zigbee Home Automation (HA) prof
 |---|---|---|---|
 | `0x0006` | On/Off | `0x0000` (OnOff) | Victron VE.Direct Load Output state (`LOAD` - ON / OFF) |
 | `0x0B04` | Electrical Measurement | `0x0000` (MeasurementType = DC)<br>`0x0508` (RMSCurrent)<br>`0x0602`/`0x0603` (Current Multiplier / Divisor) | Victron VE.Direct Load Current (`IL` in A) |
+
+## Over-The-Air (OTA) Updates
+
+This device supports Zigbee OTA updates to flash new firmware wirelessly without needing to connect it to a PC. 
+
+The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files and attaches them to GitHub Releases. Because this is a customized local device, OTA updates are applied manually through Zigbee2MQTT rather than using a public update index.
+
+**How to perform an OTA update:**
+1. Navigate to the [Releases page](../../releases) on this GitHub repository.
+2. Download the `.ota` file (e.g., `greenhouse_controller-v1.2.3.ota`) attached to the release you want to flash.
+3. Open your Zigbee2MQTT web frontend.
+4. Go to **OTA** in the top navigation bar.
+5. In the **Local OTA file** section, upload the downloaded `.ota` file.
+6. Trigger the OTA update for your device.
 
 ## Home Assistant Zigbee2Mqtt external converter
 As this is a highly customized device it does not belong in the official Zigbee2Mqtt repository of supported devices.
