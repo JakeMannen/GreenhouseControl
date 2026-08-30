@@ -24,7 +24,7 @@ jobs:
           tag_prefix: "v"
           major_pattern: "(MAJOR)"
           minor_pattern: "(MINOR)"
-          version_format: "${major}.${minor}.${patch}-prerelease${increment}"
+          version_format: "${major}.${minor}.${patch}-prerelease.${increment}"
 
       - name: Convert Version to Zigbee Format
         id: hexver
@@ -40,13 +40,11 @@ jobs:
 
       - name: Build Firmware
         uses: espressif/esp-idf-ci-action@v1
-        env:
-          OTA_FILE_VERSION: ${{ env.OTA_FILE_VERSION }}
-          APP_VERSION: ${{ env.APP_VERSION }}
         with:
           target: esp32c6
           path: 'src'
           esp_idf_version: latest
+          extra_docker_args: "-e OTA_FILE_VERSION=${{ env.OTA_FILE_VERSION }} -e APP_VERSION=${{ env.APP_VERSION }}"
 
       - name: Upload Artifacts to Workflow Run
         uses: actions/upload-artifact@v4
