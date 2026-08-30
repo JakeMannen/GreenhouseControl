@@ -189,6 +189,18 @@ static esp_err_t zb_register_climate_endpoint(ezb_af_device_desc_t device_desc)
     ezb_zcl_cluster_desc_t humidity_cluster = ezb_zcl_rel_humidity_measurement_create_cluster_desc(&humidity_meas_cfg, EZB_ZCL_CLUSTER_SERVER);
     ezb_zcl_cluster_desc_t temperature_cluster = ezb_zcl_temperature_measurement_create_cluster_desc(&temperature_meas_cfg, EZB_ZCL_CLUSTER_SERVER);
 
+    // Force temperature to be reportable
+    ezb_zcl_attr_desc_t temp_desc = ezb_zcl_cluster_get_attr_desc(temperature_cluster, EZB_ZCL_ATTR_TEMPERATURE_MEASUREMENT_MEASURED_VALUE_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (temp_desc) {
+        ezb_zcl_attr_desc_set_access(temp_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_REPORTING);
+    }
+
+    // Force humidity to be reportable
+    ezb_zcl_attr_desc_t hum_desc = ezb_zcl_cluster_get_attr_desc(humidity_cluster, EZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_MEASURED_VALUE_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (hum_desc) {
+        ezb_zcl_attr_desc_set_access(hum_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_REPORTING);
+    }
+
     // Create the Climate endpoint configuration
     ezb_af_ep_config_t climate_ep_config = {
         .ep_id              = ZB_CLIMATE_ENDPOINT_ID,
@@ -201,7 +213,6 @@ static esp_err_t zb_register_climate_endpoint(ezb_af_device_desc_t device_desc)
     // Add clusters to the endpoint
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(climate_ep_desc, humidity_cluster), TAG, "add humidity cluster failed");
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(climate_ep_desc, temperature_cluster), TAG, "add temperature cluster failed");
-
 
     ESP_RETURN_ON_ERROR(ezb_af_device_add_endpoint_desc(device_desc, climate_ep_desc), TAG, "add temperature/humidity endpoint failed");
     return ESP_OK;
