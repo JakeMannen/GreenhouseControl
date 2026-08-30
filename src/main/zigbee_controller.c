@@ -252,6 +252,13 @@ static esp_err_t zb_register_pump_endpoint(ezb_af_device_desc_t device_desc)
         .image_type_id = 0x1011,
     };
     ezb_zcl_cluster_desc_t ota_cluster = ezb_zcl_ota_upgrade_create_cluster_desc(&ota_client_config, EZB_ZCL_CLUSTER_CLIENT);
+
+#ifdef OTA_FILE_VERSION
+    static uint32_t ota_file_version = OTA_FILE_VERSION;
+    ezb_zcl_ota_upgrade_cluster_desc_add_attr(ota_cluster, EZB_ZCL_ATTR_OTA_UPGRADE_CURRENT_FILE_VERSION_ID, &ota_file_version);
+    ezb_zcl_ota_upgrade_cluster_desc_add_attr(ota_cluster, EZB_ZCL_ATTR_OTA_UPGRADE_DOWNLOADED_FILE_VERSION_ID, &ota_file_version);
+#endif
+
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, ota_cluster), TAG, "add ota cluster failed");
 
     // Add power config cluster to report battery voltage and percentage
@@ -407,6 +414,8 @@ static void zb_main_task(void *arg)
 
     ESP_ERROR_CHECK(zb_register_endpoints());
     ezb_zcl_ota_upgrade_cluster_client_init(ZB_PUMP_1_ENDPOINT_ID);
+    ezb_zcl_ota_upgrade_set_hw_version(ZB_PUMP_1_ENDPOINT_ID, ZB_MODEL_HW_VERSION);
+    ezb_af_node_desc_set_manuf_code(0x1001);
 
     ESP_ERROR_CHECK(esp_zigbee_start(false));
 
