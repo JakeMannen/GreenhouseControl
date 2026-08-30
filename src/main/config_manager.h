@@ -1,5 +1,4 @@
-#ifndef CONFIG_MANAGER_H
-#define CONFIG_MANAGER_H
+#pragma once
 
 #include <stdint.h>
 #include "esp_err.h"
@@ -32,29 +31,32 @@ typedef struct {
 
 /**
  * @brief Initialize the configuration manager and load settings from NVS.
+ * 
  * If settings are missing, default values are populated and saved.
  * 
- * @return esp_err_t ESP_OK on success
+ * @return 
+ *     - ESP_OK: Success.
+ *     - Other error code: Failed.
  */
 esp_err_t config_manager_init(void);
 
 /**
  * @brief Get a pointer to the loaded configuration.
  * 
- * @return const app_config_t* Pointer to the current config
+ * @return const app_config_t* Pointer to the current config.
  */
 const app_config_t* config_manager_get(void);
 
 /**
  * @brief Save the provided configuration to NVS and update the active config.
  * 
- * @param new_config Pointer to the new configuration
- * @return esp_err_t ESP_OK on success
+ * @param new_config Pointer to the new configuration.
+ * @return 
+ *     - ESP_OK: Success.
+ *     - Other error code: Failed.
  */
 esp_err_t config_manager_save(const app_config_t *new_config);
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif // CONFIG_MANAGER_H

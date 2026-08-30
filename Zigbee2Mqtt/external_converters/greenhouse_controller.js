@@ -1,6 +1,7 @@
 const fz = require('zigbee-herdsman-converters/converters/fromZigbee');
 const tz = require('zigbee-herdsman-converters/converters/toZigbee');
 const exposes = require('zigbee-herdsman-converters/lib/exposes');
+
 const e = exposes.presets;
 const ea = exposes.access;
 
@@ -10,6 +11,7 @@ const definition = {
     model: 'GreenhouseController',
     vendor: 'Espressif',
     description: 'Solar Powered Greenhouse Irrigation & Environmental Monitor',
+    ota: true,
     
     // Convert incoming Zigbee reports to Home Assistant states
     fromZigbee: [
@@ -128,12 +130,12 @@ const definition = {
         exposes.binary('load_state', ea.STATE, 'ON', 'OFF').withDescription('Load Output State'),
         e.temperature().withDescription('Temperature'),
         e.humidity().withDescription('Humidity'),
-        e.numeric('battery', ea.STATE).withUnit('%').withDescription('Battery Percentage'),
-        e.numeric('battery_voltage', ea.STATE).withUnit('V').withDescription('Battery Voltage'),
-        e.numeric('solar_power', ea.STATE).withUnit('W').withDescription('Solar Power'),
-        e.numeric('solar_voltage', ea.STATE).withUnit('V').withDescription('Solar Voltage'),
-        e.numeric('solar_current', ea.STATE).withUnit('A').withDescription('Solar Current'),
-        e.numeric('load_current', ea.STATE).withUnit('A').withDescription('Load Current')
+        exposes.numeric('battery', ea.STATE).withUnit('%').withDescription('Battery Percentage'),
+        exposes.numeric('battery_voltage', ea.STATE).withUnit('V').withDescription('Battery Voltage'),
+        exposes.numeric('solar_power', ea.STATE).withUnit('W').withDescription('Solar Power'),
+        exposes.numeric('solar_voltage', ea.STATE).withUnit('V').withDescription('Solar Voltage'),
+        exposes.numeric('solar_current', ea.STATE).withUnit('A').withDescription('Solar Current'),
+        exposes.numeric('load_current', ea.STATE).withUnit('A').withDescription('Load Current')
     ],
 };
 

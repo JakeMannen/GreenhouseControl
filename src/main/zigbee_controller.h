@@ -24,6 +24,18 @@ extern "C" {
 #define ZB_MODEL_IDENTIFIER        CONFIG_GH_ZIGBEE_MODEL_IDENTIFIER
 #define ZB_MODEL_HW_VERSION        CONFIG_GH_ZIGBEE_HW_VERSION
 
+#ifdef APP_VERSION_STR
+#define ZB_SW_BUILD_ID             APP_VERSION_STR
+#else
+#define ZB_SW_BUILD_ID             CONFIG_GH_ZIGBEE_SW_BUILD_ID
+#endif
+
+#ifdef OTA_FILE_VERSION
+#define ZB_APP_VERSION             (uint8_t)((OTA_FILE_VERSION >> 24) & 0xFF)
+#else
+#define ZB_APP_VERSION             CONFIG_GH_ZIGBEE_APP_VERSION
+#endif
+
 #define ZB_TASK_STACK              4096
 #define ZB_TASK_PRIORITY           5
 
@@ -56,21 +68,33 @@ extern "C" {
 
 
 /**
- * Initialize the Zigbee stack and spawn the Zigbee main-loop task.
+ * @brief Initialize the Zigbee stack and spawn the Zigbee main-loop task.
  *
  * Must be called once after NVS has been initialized. Returns immediately;
  * all Zigbee work runs in a dedicated FreeRTOS task so the caller is free
  * to run its own main loop.
+ * 
+ * @return 
+ *     - ESP_OK: Success.
+ *     - Other error code: Failed.
  */
 esp_err_t zigbee_controller_init(void);
 
 /**
- * Report a changed attribute value to the coordinator.
+ * @brief Report a changed attribute value to the coordinator.
+ * 
+ * @param ep Endpoint ID.
+ * @param cluster_id Cluster ID.
+ * @param attribute_id Attribute ID.
  */
 void zigbee_report_attribute(uint8_t ep, uint16_t cluster_id, uint16_t attribute_id);
 
 /**
- * Check if the device is currently connected to a Zigbee network.
+ * @brief Check if the device is currently connected to a Zigbee network.
+ * 
+ * @return 
+ *     - true: Connected.
+ *     - false: Not connected.
  */
 bool zigbee_is_connected(void);
 
