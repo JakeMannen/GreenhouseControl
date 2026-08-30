@@ -105,10 +105,10 @@ The controller exposes four endpoints under the Zigbee Home Automation (HA) prof
 
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
-| `0x0000` | Basic | `0x0000` (ZCL Version)<br>`0x0003` (HW Version)<br>`0x0004` (Manufacturer Name)<br>`0x0005` (Model Identifier)<br>`0x0007` (Power Source) | Device metadata and power source (`Battery`) |
+| `0x0000` | Basic | `0x0000` (ZCL Version)<br>`0x0001` (App Version)<br>`0x0003` (HW Version)<br>`0x0004` (Manufacturer Name)<br>`0x0005` (Model Identifier)<br>`0x0006` (Date Code)<br>`0x0007` (Power Source)<br>`0x4000` (SW Build ID) | Device metadata, versioning, date code, and power source (`Battery`) |
 | `0x0006` | On/Off | `0x0000` (OnOff) | Water pump 1 output control (ON / OFF) |
 | `0x0001` | Power Configuration | `0x0020` (BatteryVoltage)<br>`0x0021` (BatteryPercentageRemaining) | Battery voltage (in 100mV units) and state-of-charge percentage (calculated using LiFePO4 discharge curve) |
-| `0x0019` | OTA Upgrade (Client) | - | Over-The-Air firmware updates |
+| `0x0019` | OTA Upgrade (Client) | `0x0002` (Current File Version)<br>`0x0004` (Downloaded File Version) | Over-The-Air firmware updates |
 
 ### Endpoint 2: Climate & Environment
 * **Endpoint ID**: `2`

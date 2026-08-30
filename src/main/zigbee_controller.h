@@ -30,6 +30,12 @@ extern "C" {
 #define ZB_SW_BUILD_ID             CONFIG_GH_ZIGBEE_SW_BUILD_ID
 #endif
 
+#ifdef BUILD_DATE_STR
+#define ZB_DATE_CODE               BUILD_DATE_STR
+#else
+#define ZB_DATE_CODE               "20260830"
+#endif
+
 #ifdef OTA_FILE_VERSION
 #define ZB_APP_VERSION             (uint8_t)((OTA_FILE_VERSION >> 24) & 0xFF)
 #else

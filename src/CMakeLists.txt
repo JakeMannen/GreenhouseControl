@@ -16,16 +16,22 @@ else()
     set(OTA_FILE_VERSION 0x01010110)
 endif()
 
+if(DEFINED ENV{BUILD_DATE})
+    set(BUILD_DATE $ENV{BUILD_DATE})
+else()
+    string(TIMESTAMP BUILD_DATE "%Y%m%d")
+endif()
+
 project(greenhouse_controller)
 
 add_custom_command(TARGET gen_project_binary POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Generating Zigbee OTA Image with Version ${OTA_FILE_VERSION}..."
+    COMMAND ${CMAKE_COMMAND} -E echo "Generating Zigbee OTA Image with Version ${OTA_FILE_VERSION} (Build Date: ${BUILD_DATE})..."
     COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/tools/image_builder_tool.py
         --manuf-id 0x1001
         --image-type 0x1011
         --file-version ${OTA_FILE_VERSION}
         --output ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-v${APP_VERSION}.ota
-        --tag 0x1234
+        --tag 0x0000
         ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.bin
     COMMENT "Building Zigbee OTA Image"
     VERBATIM
