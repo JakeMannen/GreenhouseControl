@@ -165,17 +165,16 @@ void app_main(void) {
         if (xQueueReceive(s_app_event_queue, &evt, portMAX_DELAY)) {
             switch (evt.type) {
                 case EVENT_TYPE_CLIMATE:
-                    ESP_LOGI(TAG, "Reporting new climate data");
+                    ESP_LOGI(TAG, "Updating climate data: Temp %d (0.01 C), Humidity %d (0.01 %%)",
+                             evt.data.climate.temperature, evt.data.climate.humidity);
                     esp_zigbee_lock_acquire(portMAX_DELAY);
                     ezb_zcl_set_attr_value(ZB_CLIMATE_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_TEMPERATURE_MEASUREMENT,
                                            EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_TEMPERATURE_MEASUREMENT_MEASURED_VALUE_ID,
                                            EZB_ZCL_STD_MANUF_CODE, (uint16_t *)&evt.data.climate.temperature, false);
-                    zigbee_report_attribute(ZB_CLIMATE_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_TEMPERATURE_MEASUREMENT, EZB_ZCL_ATTR_TEMPERATURE_MEASUREMENT_MEASURED_VALUE_ID);
                     
                     ezb_zcl_set_attr_value(ZB_CLIMATE_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
                                            EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_MEASURED_VALUE_ID,
                                            EZB_ZCL_STD_MANUF_CODE, (uint16_t *)&evt.data.climate.humidity, false);                       
-                    zigbee_report_attribute(ZB_CLIMATE_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, EZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_MEASURED_VALUE_ID);
                     esp_zigbee_lock_release();
                     break;
 
