@@ -98,7 +98,7 @@ const definition = {
             await endpoint_load.bind('haElectricalMeasurement', coordinatorEndpoint);
         }
 
-        // Force configure reporting for the battery cluster
+        // Configure reporting for the battery cluster
         try {
             await endpoint_pump.configureReporting('genPowerCfg', [
                 {attribute: 'batteryVoltage', minimumReportInterval: 10, maximumReportInterval: 3600, reportableChange: 1},
@@ -106,6 +106,18 @@ const definition = {
             ]);
         } catch (e) {
             console.error(`Failed to configure battery reporting: ${e}`);
+        }
+
+        // Configure reporting for climate (temperature & humidity) clusters
+        try {
+            await endpoint_climate.configureReporting('msTemperatureMeasurement', [
+                {attribute: 'measuredValue', minimumReportInterval: 10, maximumReportInterval: 300, reportableChange: 50} // 0.50 °C
+            ]);
+            await endpoint_climate.configureReporting('msRelativeHumidity', [
+                {attribute: 'measuredValue', minimumReportInterval: 10, maximumReportInterval: 300, reportableChange: 100} // 1.00 %
+            ]);
+        } catch (e) {
+            console.error(`Failed to configure climate reporting: ${e}`);
         }
     },
     

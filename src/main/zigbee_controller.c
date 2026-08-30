@@ -12,11 +12,25 @@
 #include "ezbee/zcl.h"
 #include "ezbee/zcl/cluster/ota_upgrade.h"
 #include "ezbee/zcl/cluster/ota_upgrade_desc.h"
+#include "ezbee/zcl/cluster/ota_file.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
 #include "led.h"
 
 static const char *TAG = "ZB_CONTROLLER";
 static bool s_is_connected = false;
 static esp_timer_handle_t s_steering_timer;
+
+static const esp_partition_t *s_ota_partition = NULL;
+static esp_ota_handle_t s_ota_handle = 0;
+static bool s_ota_in_progress = false;
+static uint32_t s_ota_total_size = 0;
+static uint32_t s_ota_received_size = 0;
+static uint32_t s_ota_written_size = 0;
+static bool s_tag_header_parsed = false;
+static uint16_t s_ota_tag_id = 0;
+static uint32_t s_ota_tag_len = 0;
+static uint16_t s_ota_header_len = 0;
 
 bool zigbee_is_connected(void)
 {
@@ -129,6 +143,68 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
     return true;
 }
 
+static esp_err_t ota_stream_write_block(uint32_t file_offset, uint8_t *block, uint8_t block_size)
+{
+    if (!s_ota_in_progress || !block || block_size == 0) {
+        return ESP_FAIL;
+    }
+
+    uint32_t chunk_offset = file_offset;
+    uint32_t chunk_remaining = block_size;
+    uint8_t *chunk_ptr = block;
+
+    // 1. If we have not yet parsed the OTA header (first 56+ bytes):
+    if (chunk_offset < sizeof(ezb_zcl_ota_file_header_t) && s_ota_header_len == 0) {
+        if (chunk_offset + chunk_remaining >= sizeof(ezb_zcl_ota_file_header_t)) {
+            ezb_zcl_ota_file_header_t *hdr = (ezb_zcl_ota_file_header_t *)chunk_ptr;
+            s_ota_header_len = hdr->hdr_length;
+            ESP_LOGI(TAG, "OTA File Header parsed: hdr_len=%u, total_size=%lu, file_ver=0x%08lx",
+                     s_ota_header_len, (unsigned long)hdr->total_image_size, (unsigned long)hdr->file_version);
+        }
+    }
+
+    // 2. Skip over OTA file header if we are within the header region
+    if (s_ota_header_len > 0 && chunk_offset < s_ota_header_len) {
+        uint32_t skip = s_ota_header_len - chunk_offset;
+        if (skip >= chunk_remaining) {
+            return ESP_OK; // entire block was header
+        }
+        chunk_offset += skip;
+        chunk_remaining -= skip;
+        chunk_ptr += skip;
+    }
+
+    // 3. Parse sub-element tag header (6 bytes: tag_id 2 bytes + length 4 bytes)
+    if (!s_tag_header_parsed && s_ota_header_len > 0 && chunk_offset >= s_ota_header_len) {
+        uint32_t tag_hdr_offset = chunk_offset - s_ota_header_len;
+        if (tag_hdr_offset == 0 && chunk_remaining >= sizeof(ezb_zcl_ota_file_sub_element_header_t)) {
+            ezb_zcl_ota_file_sub_element_header_t *tag_hdr = (ezb_zcl_ota_file_sub_element_header_t *)chunk_ptr;
+            s_ota_tag_id = tag_hdr->tag_id;
+            s_ota_tag_len = tag_hdr->length;
+            s_tag_header_parsed = true;
+            ESP_LOGI(TAG, "OTA Tag Header parsed: tag_id=0x%04x, tag_len=%lu bytes",
+                     s_ota_tag_id, (unsigned long)s_ota_tag_len);
+
+            chunk_offset += sizeof(ezb_zcl_ota_file_sub_element_header_t);
+            chunk_remaining -= sizeof(ezb_zcl_ota_file_sub_element_header_t);
+            chunk_ptr += sizeof(ezb_zcl_ota_file_sub_element_header_t);
+        }
+    }
+
+    // 4. If we have binary payload data to write
+    if (s_tag_header_parsed && chunk_remaining > 0 && s_ota_tag_id == EZB_ZCL_OTA_FILE_TAG_ID_UPGRADE_IMAGE) {
+        esp_err_t err = esp_ota_write(s_ota_handle, (const void *)chunk_ptr, chunk_remaining);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_ota_write failed (offset=%lu, len=%lu): %s",
+                     (unsigned long)s_ota_written_size, (unsigned long)chunk_remaining, esp_err_to_name(err));
+            return err;
+        }
+        s_ota_written_size += chunk_remaining;
+    }
+
+    return ESP_OK;
+}
+
 static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id, void *message)
 {
     switch (callback_id) {
@@ -144,10 +220,200 @@ static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id,
                      m->in.header->src_ep, m->in.rsp_to_cmd, m->in.status_code);
         } break;
 
+        case EZB_ZCL_CORE_OTA_UPGRADE_QUERY_NEXT_IMAGE_RSP_CB_ID: {
+            ezb_zcl_ota_upgrade_query_next_image_rsp_message_t *m = message;
+            if (m) {
+                if (m->in.image.status == EZB_ZCL_OTA_UPGRADE_STATUS_CODE_SUCCESS) {
+                    ESP_LOGI(TAG, "OTA Query Next Image Response: update available! manuf=0x%04x, type=0x%04x, ver=0x%08lx, size=%lu",
+                             m->in.image.manuf_code, m->in.image.image_type,
+                             (unsigned long)m->in.image.file_version, (unsigned long)m->in.image.size);
+                    m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                } else {
+                    ESP_LOGI(TAG, "OTA Query Next Image Response: no update (status 0x%02x)", m->in.image.status);
+                    m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                }
+            }
+        } break;
+
+        case EZB_ZCL_CORE_OTA_UPGRADE_CLIENT_PROGRESS_CB_ID: {
+            ezb_zcl_ota_upgrade_client_progress_message_t *m = message;
+            if (!m) break;
+
+            switch (m->in.progress) {
+                case EZB_ZCL_OTA_UPGRADE_PROGRESS_START: {
+                    ESP_LOGI(TAG, "OTA Upgrade Progress START: manuf=0x%04x, type=0x%04x, ver=0x%08lx, total_size=%lu",
+                             m->in.start.manuf_code, m->in.start.image_type,
+                             (unsigned long)m->in.start.file_version, (unsigned long)m->in.start.image_size);
+
+                    s_ota_total_size = m->in.start.image_size;
+                    s_ota_received_size = 0;
+                    s_ota_written_size = 0;
+                    s_tag_header_parsed = false;
+                    s_ota_tag_id = 0;
+                    s_ota_tag_len = 0;
+                    s_ota_header_len = 0;
+
+                    s_ota_partition = esp_ota_get_next_update_partition(NULL);
+                    if (!s_ota_partition) {
+                        ESP_LOGE(TAG, "No OTA partition found to flash");
+                        m->out.result = EZB_ZCL_STATUS_FAIL;
+                        break;
+                    }
+                    ESP_LOGI(TAG, "Writing to OTA partition subtype %d at offset 0x%lx",
+                             s_ota_partition->subtype, (unsigned long)s_ota_partition->address);
+
+                    esp_err_t err = esp_ota_begin(s_ota_partition, OTA_WITH_SEQUENTIAL_WRITES, &s_ota_handle);
+                    if (err != ESP_OK) {
+                        ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+                        s_ota_in_progress = false;
+                        m->out.result = EZB_ZCL_STATUS_FAIL;
+                        break;
+                    }
+
+                    s_ota_in_progress = true;
+                    m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                } break;
+
+                case EZB_ZCL_OTA_UPGRADE_PROGRESS_RECEIVING: {
+                    s_ota_received_size = m->in.receiving.file_offset + m->in.receiving.block_size;
+                    static uint32_t s_last_percent = 0;
+                    uint32_t percent = s_ota_total_size > 0 ? (s_ota_received_size * 100) / s_ota_total_size : 0;
+                    if (percent / 10 != s_last_percent / 10 || percent == 100) {
+                        s_last_percent = percent;
+                        ESP_LOGI(TAG, "OTA Download Progress: %lu%% (%lu/%lu bytes)",
+                                 (unsigned long)percent, (unsigned long)s_ota_received_size, (unsigned long)s_ota_total_size);
+                    }
+
+                    esp_err_t err = ota_stream_write_block(m->in.receiving.file_offset, m->in.receiving.block, m->in.receiving.block_size);
+                    if (err != ESP_OK) {
+                        ESP_LOGE(TAG, "Failed writing OTA block at offset %lu", (unsigned long)m->in.receiving.file_offset);
+                        m->out.result = EZB_ZCL_STATUS_FAIL;
+                    } else {
+                        m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                    }
+                } break;
+
+                case EZB_ZCL_OTA_UPGRADE_PROGRESS_CHECK: {
+                    ESP_LOGI(TAG, "OTA Upgrade Progress CHECK: manuf=0x%04x, type=0x%04x, ver=0x%08lx",
+                             m->in.check.manuf_code, m->in.check.image_type, (unsigned long)m->in.check.file_version);
+                    ESP_LOGI(TAG, "OTA Total received=%lu bytes, written to partition=%lu bytes (tag_len=%lu)",
+                             (unsigned long)s_ota_received_size, (unsigned long)s_ota_written_size, (unsigned long)s_ota_tag_len);
+                    m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                } break;
+
+                case EZB_ZCL_OTA_UPGRADE_PROGRESS_APPLY: {
+                    ESP_LOGI(TAG, "OTA Upgrade Progress APPLY: manuf=0x%04x, type=0x%04x, ver=0x%08lx",
+                             m->in.apply.manuf_code, m->in.apply.image_type, (unsigned long)m->in.apply.file_version);
+
+                    if (s_ota_in_progress && s_ota_handle) {
+                        esp_err_t err = esp_ota_end(s_ota_handle);
+                        if (err != ESP_OK) {
+                            ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
+                            m->out.result = EZB_ZCL_STATUS_FAIL;
+                            break;
+                        }
+                        s_ota_handle = 0;
+
+                        err = esp_ota_set_boot_partition(s_ota_partition);
+                        if (err != ESP_OK) {
+                            ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
+                            m->out.result = EZB_ZCL_STATUS_FAIL;
+                            break;
+                        }
+                        ESP_LOGI(TAG, "Next boot partition set successfully to subtype %d (address 0x%lx)",
+                                 s_ota_partition->subtype, (unsigned long)s_ota_partition->address);
+                    }
+                    m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                } break;
+
+                case EZB_ZCL_OTA_UPGRADE_PROGRESS_FINISH: {
+                    ESP_LOGI(TAG, "OTA Upgrade Progress FINISH: countdown delay = %lu seconds. Restarting device...",
+                             (unsigned long)m->in.finish.count_down_delay);
+                    s_ota_in_progress = false;
+                    m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+                } break;
+
+                case EZB_ZCL_OTA_UPGRADE_PROGRESS_ABORT: {
+                    ESP_LOGW(TAG, "OTA Upgrade Progress ABORT");
+                    if (s_ota_in_progress && s_ota_handle) {
+                        esp_ota_abort(s_ota_handle);
+                        s_ota_handle = 0;
+                    }
+                    s_ota_in_progress = false;
+                    m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                } break;
+
+                default:
+                    ESP_LOGW(TAG, "Unknown OTA progress state: %d", m->in.progress);
+                    m->out.result = EZB_ZCL_STATUS_SUCCESS;
+                    break;
+            }
+        } break;
+
         default:
             ESP_LOGI(TAG, "ZCL action: 0x%04lx", (unsigned long)callback_id);
             break;
+    }
+}
+
+static bool zb_raw_frame_handler(const ezb_zcl_raw_frame_t *raw_frame)
+{
+    if (!raw_frame || !raw_frame->header) {
+        return false;
+    }
+
+    // Intercept OTA ImageNotify command (cluster 0x0019, cmd 0x00)
+    if (raw_frame->header->cluster_id == EZB_ZCL_CLUSTER_ID_OTA_UPGRADE &&
+        raw_frame->header->cmd_id == EZB_ZCL_CMD_OTA_UPGRADE_IMAGE_NOTIFY_ID) {
+
+        uint8_t payload_type = 0;
+        uint8_t query_jitter = 100;
+        if (raw_frame->payload_length >= 1) {
+            payload_type = raw_frame->payload[0];
         }
+        if (raw_frame->payload_length >= 2) {
+            query_jitter = raw_frame->payload[1];
+        }
+
+        ESP_LOGI(TAG, "Received OTA ImageNotify (payload_type=%u, jitter=%u) from 0x%04x:ep%d",
+                 payload_type, query_jitter, raw_frame->header->src_addr.u.short_addr, raw_frame->header->src_ep);
+
+        // Send QueryNextImageRequest to the sender
+        ezb_zcl_ota_upgrade_query_next_image_req_cmd_t query_req = {
+            .cmd_ctrl = {
+                .dst_ep = raw_frame->header->src_ep,
+                .src_ep = ZB_PUMP_1_ENDPOINT_ID,
+                .dst_addr.addr_mode = EZB_ADDR_MODE_SHORT,
+                .dst_addr.u.short_addr = raw_frame->header->src_addr.u.short_addr,
+            },
+            .payload = {
+                .fc = 0,
+                .manuf_code = 0x1001,
+                .image_type = 0x1011,
+#ifdef OTA_FILE_VERSION
+                .file_version = OTA_FILE_VERSION,
+#else
+                .file_version = 0,
+#endif
+                .hw_version = ZB_MODEL_HW_VERSION,
+            },
+        };
+
+        esp_err_t ret = ezb_zcl_ota_upgrade_query_next_image_cmd_req(&query_req);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to send QueryNextImageRequest: %s", esp_err_to_name(ret));
+        } else {
+            ESP_LOGI(TAG, "Sent QueryNextImageRequest to 0x%04x:ep%d",
+                     raw_frame->header->src_addr.u.short_addr, raw_frame->header->src_ep);
+        }
+
+        // Return true to consume frame so stack doesn't send UNSUP_COMMAND
+        return true;
+    }
+
+    return false;
 }
 
 static esp_err_t add_basic_cluster_to_endpoint(ezb_af_ep_desc_t *endpoint_desc) {
@@ -166,6 +432,11 @@ static esp_err_t add_basic_cluster_to_endpoint(ezb_af_ep_desc_t *endpoint_desc) 
     model_p_string[0] = sizeof(ZB_MODEL_IDENTIFIER) - 1; 
     memcpy(&model_p_string[1], ZB_MODEL_IDENTIFIER, model_p_string[0]);
 
+    // Format date code as a Zigbee string (length byte followed by characters)
+    static uint8_t date_code_p_string[sizeof(ZB_DATE_CODE)];
+    date_code_p_string[0] = sizeof(ZB_DATE_CODE) - 1;
+    memcpy(&date_code_p_string[1], ZB_DATE_CODE, date_code_p_string[0]);
+
     static uint8_t model_hw_version = (uint8_t)ZB_MODEL_HW_VERSION;
     static uint8_t app_version = (uint8_t)ZB_APP_VERSION;
 
@@ -179,19 +450,20 @@ static esp_err_t add_basic_cluster_to_endpoint(ezb_af_ep_desc_t *endpoint_desc) 
     memcpy(&sw_build_p_string[1], ZB_SW_BUILD_ID, sw_len);
     
     // If there is no Basic cluster on this endpoint yet, create it and add it to the endpoint.
-     ezb_zcl_basic_cluster_server_config_t basic_cfg = {
-            .zcl_version = 0x03,  // Zigbee 3.0 standard
-            .power_source = ZB_POWER_SOURCE, // 0x01 = Mains, 0x03 = Battery
-        };
+    ezb_zcl_basic_cluster_server_config_t basic_cfg = {
+        .zcl_version = 0x03,  // Zigbee 3.0 standard
+        .power_source = ZB_POWER_SOURCE, // 0x01 = Mains, 0x03 = Battery
+    };
 
     basic = ezb_zcl_basic_create_cluster_desc(&basic_cfg, EZB_ZCL_CLUSTER_SERVER);
 
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(endpoint_desc, basic), TAG, "add basic cluster failed");
-    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID,(void *) manuf_p_string);
-    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID,(void *) model_p_string);
-    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_HW_VERSION_ID,(void *) &model_hw_version);
-    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_APPLICATION_VERSION_ID,(void *) &app_version);
-    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_SW_BUILD_ID_ID,(void *) sw_build_p_string);
+    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, (void *)manuf_p_string);
+    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID, (void *)model_p_string);
+    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_DATE_CODE_ID, (void *)date_code_p_string);
+    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_HW_VERSION_ID, (void *)&model_hw_version);
+    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_APPLICATION_VERSION_ID, (void *)&app_version);
+    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_SW_BUILD_ID_ID, (void *)sw_build_p_string);
     return ESP_OK;
 
 }
@@ -447,8 +719,10 @@ static void zb_main_task(void *arg)
     ESP_ERROR_CHECK(ezb_app_signal_add_handler(zb_app_signal_handler));
 
     ESP_ERROR_CHECK(zb_register_endpoints());
+    ezb_zcl_raw_command_handler_register(zb_raw_frame_handler);
     ezb_zcl_ota_upgrade_cluster_client_init(ZB_PUMP_1_ENDPOINT_ID);
     ezb_zcl_ota_upgrade_set_hw_version(ZB_PUMP_1_ENDPOINT_ID, ZB_MODEL_HW_VERSION);
+    ezb_zcl_ota_upgrade_set_download_block_size(ZB_PUMP_1_ENDPOINT_ID, 223);
     ezb_af_node_desc_set_manuf_code(0x1001);
 
     ESP_ERROR_CHECK(esp_zigbee_start(false));

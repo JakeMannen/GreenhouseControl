@@ -2,86 +2,128 @@
 
 ## About the Project
 This is an embedded system project for a greenhouse irrigation controller based on the ESP-IDF framework. It utilizes Zigbee, I2C, UART, and GPIO interfaces to communicate with and control various devices and sensors, including:
-- Water pumps (MOSFET)
-- SHT30 Temperature and humidity sensor
-- On/Off switch for pump
-- Victron Solar panel controllers (VE.direct)
+- Water pumps (MOSFET control with safety auto-off timer)
+- SHT30 Temperature and humidity sensor (I2C)
+- Physical manual override button & pairing button
+- Status RGB LED (WS2812)
+- Victron Solar panel charge controllers (VE.Direct UART)
 
-## Hardware Needed
-- **Microcontroller**: ESP32-C6 (intended hardware target)
+## Hardware & Pinout
 
-## Dependencies Needed
+### Target Hardware
+- **Microcontroller**: ESP32-C6 (intended hardware target with native IEEE 802.15.4 Zigbee support)
+
+### Default GPIO Pin Mapping
+Pin assignments can be customized via `idf.py menuconfig` under *Greenhouse Controller Configuration -> Hardware Pins*.
+
+| Function | Pin (ESP32-C6 Default) | Interface / Type | Description |
+|---|---|---|---|
+| **Pump Output** | GPIO 20 | Digital Output (Active High) | Controls the MOSFET driving the irrigation water pump |
+| **Pump Manual Button** | GPIO 21 | Digital Input (Pull-up) | Pushbutton to manually toggle the pump on/off |
+| **Pairing / Reset Button** | GPIO 9 | Digital Input (Pull-up / BOOT) | Pushbutton to trigger Zigbee pairing / factory reset |
+| **SHT30 SDA** | GPIO 6 | I2C SDA | Data line for SHT30 Temperature & Humidity sensor |
+| **SHT30 SCL** | GPIO 7 | I2C SCL | Clock line for SHT30 Temperature & Humidity sensor |
+| **VE.Direct RX** | GPIO 17 | UART RX (19200 baud) | Receives VE.Direct text protocol from Victron MPPT controller |
+| **Status RGB LED** | GPIO 8 | WS2812 (RMT) | Built-in RGB addressable LED for system status |
+
+---
+
+## Device Operation & Features
+
+### Physical Buttons
+- **Pump Manual Toggle (GPIO 21)**: Press once to toggle the irrigation pump ON or OFF manually.
+- **Pairing & Factory Reset (GPIO 9 / BOOT)**: Press **3 times within a 2-second window** to reset Zigbee network credentials and enter Zigbee pairing mode (searches for network for 3 minutes).
+
+### Pump Safety Auto-Off Timer
+To prevent accidental water overflows or running the pump dry, the controller includes a hardware safety timer (default: **10 minutes**). If the pump is turned on (either via Zigbee or manual button), it will automatically turn off once the timer expires.
+
+### Status LED Indications (WS2812)
+The onboard RGB LED provides visual feedback on device connectivity:
+- **Blinking Blue** (500 ms interval): Searching for Zigbee network (Pairing Mode / Steering).
+- **Fast Blinking Green** (4 pulses): Successfully joined a new Zigbee network.
+- **Single Slow Green Pulse** (2 seconds): Rejoined an existing Zigbee network upon boot.
+- **Fast Blinking Red** (4 pulses): Network join or pairing failed / timeout.
+- **Solid Yellow**: System warning state.
+
+---
+
+## Dependencies & Environment
 - **ESP-IDF**: Version >= v6.1
-- **esp_zigbee_lib**: Version v2.0.1
-- **Dev Containers Environment**: The build environment is containerized.
+- **esp_zigbee_lib**: Version >= v2.0.1
+- **Dev Containers Environment**: The build environment is fully containerized.
 
-## Recommended Setup
-It is recommended to use the project with **VS Code** and the extensions **Dev Containers, Remote Development & ESP-IDF**
+### Recommended Setup
+It is recommended to develop using **VS Code** with the **Dev Containers**, **Remote Development**, and **ESP-IDF** extensions.
 
-To have the ESP board accessible inside the devcontainer, see: https://docs.espressif.com/projects/vscode-esp-idf-extension/en/latest/additionalfeatures/docker-container.html
+To enable serial flashing inside the dev container on Windows/Linux, refer to the [Espressif Dev Containers Guide](https://docs.espressif.com/projects/vscode-esp-idf-extension/en/latest/additionalfeatures/docker-container.html).
+
+---
 
 ## How to Build, Flash & Monitor
-All `idf.py` commands must be executed within the devcontainer located in `/src/.devcontainer`. 
-If the devcontainer is not currently running, start it from the project root folder by executing:
+
+All `idf.py` commands targeting the `src` directory can be executed via the dev container.
+
+If the dev container is not currently running, start it from the project root:
 ```bash
 devcontainer up --workspace-folder .
 ```
 
 ### Build
-To compile the project, run:
+To compile the project:
 ```bash
-devcontainer exec idf.py build
+devcontainer exec --workspace-folder . idf.py -C src build
 ```
 
 ### Flash
-To flash the compiled firmware to the ESP32-C6, run:
+To flash the compiled firmware to the ESP32-C6:
 ```bash
-devcontainer exec idf.py flash
+devcontainer exec --workspace-folder . idf.py -C src flash
 ```
-*(Note: You might need to specify the serial port, e.g., `devcontainer exec idf.py -p COM3 flash`)*
+*(Note: You can specify the serial port if needed, e.g., `devcontainer exec --workspace-folder . idf.py -C src -p COM3 flash`)*
 
 ### Monitor
-To monitor the serial output from the device, run:
+To view serial monitor logs:
 ```bash
-devcontainer exec idf.py monitor
+devcontainer exec --workspace-folder . idf.py -C src monitor
 ```
-*(Note: You might need to specify the serial port, e.g., `devcontainer exec idf.py -p COM3 monitor`)*
 
-### Configuration
-If you need to change project configuration settings, run:
+### Configuration Menu
+To configure pinouts, reporting intervals, and Zigbee settings:
 ```bash
-devcontainer exec idf.py menuconfig
+devcontainer exec --workspace-folder . idf.py -C src menuconfig
 ```
+
+---
 
 ## Zigbee Endpoints & Clusters
 
 The controller exposes four endpoints under the Zigbee Home Automation (HA) profile (`0x0104`):
 
-### Endpoint 1: Pump & System Control
+### Endpoint 1: Pump & Power Configuration
 * **Endpoint ID**: `1`
 * **Device ID**: `0x0303`
 
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
-| `0x0000` | Basic | `0x0000` (ZCL Version)<br>`0x0003` (HW Version)<br>`0x0004` (Manufacturer Name)<br>`0x0005` (Model Identifier)<br>`0x0007` (Power Source) | Device metadata and power source (`Battery`) |
+| `0x0000` | Basic | `0x0000` (ZCL Version)<br>`0x0001` (App Version)<br>`0x0003` (HW Version)<br>`0x0004` (Manufacturer Name)<br>`0x0005` (Model Identifier)<br>`0x0006` (Date Code)<br>`0x0007` (Power Source)<br>`0x4000` (SW Build ID) | Device metadata, versioning, date code, and power source (`Battery`) |
 | `0x0006` | On/Off | `0x0000` (OnOff) | Water pump 1 output control (ON / OFF) |
-| `0x0001` | Power Configuration | `0x0020` (BatteryVoltage)<br>`0x0021` (BatteryPercentageRemaining) | Battery voltage (in 100mV units) and state of charge percentage |
-| `0x0019` | OTA Upgrade (Client) | - | Over-The-Air firmware updates |
+| `0x0001` | Power Configuration | `0x0020` (BatteryVoltage)<br>`0x0021` (BatteryPercentageRemaining) | Battery voltage (in 100mV units) and state-of-charge percentage (calculated using LiFePO4 discharge curve) |
+| `0x0019` | OTA Upgrade (Client) | `0x0002` (Current File Version)<br>`0x0004` (Downloaded File Version) | Over-The-Air firmware updates |
 
 ### Endpoint 2: Climate & Environment
 * **Endpoint ID**: `2`
 
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
-| `0x0402` | Temperature Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Temperature in 0.01 °C resolution (-40.00 °C to 125.00 °C) |
-| `0x0405` | Relative Humidity Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Relative Humidity in 0.01 % resolution (0.00 % to 100.00 %) |
+| `0x0402` | Temperature Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Temperature in 0.01 °C resolution (-40.00 °C to 125.00 °C). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 300s, delta 0.50 °C). |
+| `0x0405` | Relative Humidity Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Relative Humidity in 0.01 % resolution (0.00 % to 100.00 %). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 300s, delta 1.00 %). |
 
 ### Endpoint 3: Solar Panel Monitoring
 * **Endpoint ID**: `3`
 
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
-| `0x0B04` | Electrical Measurement | `0x0000` (MeasurementType = DC)<br>`0x0505` (RMSVoltage)<br>`0x0508` (RMSCurrent)<br>`0x050B` (ActivePower)<br>`0x0600`/`0x0601` (Voltage Multiplier / Divisor)<br>`0x0602`/`0x0603` (Current Multiplier / Divisor)<br>`0x0604`/`0x0605` (Power Multiplier / Divisor) | Victron VE.Direct solar panel telemetry (Panel/Battery Voltage in V, Current in A, Power in W) |
+| `0x0B04` | Electrical Measurement | `0x0000` (MeasurementType = DC)<br>`0x0505` (RMSVoltage)<br>`0x0508` (RMSCurrent)<br>`0x050B` (ActivePower)<br>`0x0600`/`0x0601` (Voltage Multiplier / Divisor)<br>`0x0602`/`0x0603` (Current Multiplier / Divisor)<br>`0x0604`/`0x0605` (Power Multiplier / Divisor) | Victron VE.Direct solar panel telemetry (Panel Voltage in 0.01V, Charge Current in 0.01A, Solar Power in 0.1W) |
 
 ### Endpoint 4: Load Output & Current Monitoring
 * **Endpoint ID**: `4`
@@ -89,25 +131,37 @@ The controller exposes four endpoints under the Zigbee Home Automation (HA) prof
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
 | `0x0006` | On/Off | `0x0000` (OnOff) | Victron VE.Direct Load Output state (`LOAD` - ON / OFF) |
-| `0x0B04` | Electrical Measurement | `0x0000` (MeasurementType = DC)<br>`0x0508` (RMSCurrent)<br>`0x0602`/`0x0603` (Current Multiplier / Divisor) | Victron VE.Direct Load Current (`IL` in A) |
+| `0x0B04` | Electrical Measurement | `0x0000` (MeasurementType = DC)<br>`0x0508` (RMSCurrent)<br>`0x0602`/`0x0603` (Current Multiplier / Divisor) | Victron VE.Direct Load Current (`IL` in 0.01A) |
+
+---
 
 ## Over-The-Air (OTA) Updates
 
-This device supports Zigbee OTA updates to flash new firmware wirelessly without needing to connect it to a PC. 
+This device supports Zigbee OTA updates to flash new firmware wirelessly without needing physical serial access. 
 
-The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files and attaches them to GitHub Releases. Because this is a customized local device, OTA updates are applied manually through Zigbee2MQTT rather than using a public update index.
+The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files and attaches them to GitHub Releases. Because this is a custom local device, OTA updates are uploaded directly through Zigbee2MQTT.
 
 **How to perform an OTA update:**
 1. Navigate to the [Releases page](../../releases) on this GitHub repository.
-2. Download the `.ota` file (e.g., `greenhouse_controller-v1.2.3.ota`) attached to the release you want to flash.
-3. Open your Zigbee2MQTT web frontend.
+2. Download the `.ota` file (e.g., `greenhouse_controller-v1.2.3.ota`) from the latest release.
+3. Open your **Zigbee2MQTT** web frontend.
 4. Go to **OTA** in the top navigation bar.
-5. In the **Local OTA file** section, upload the downloaded `.ota` file.
+5. Under the **Local OTA file** section, upload the downloaded `.ota` file.
 6. Trigger the OTA update for your device.
 
-## Home Assistant Zigbee2Mqtt external converter
-As this is a highly customized device it does not belong in the official Zigbee2Mqtt repository of supported devices.
+---
 
-If you want to have the device supported in your local installation of Home Assistant, you can add the included external converter folders, **external_converters/ & device_icons/** to the **zigbe2mqtt** folder (where its configuration.yaml is located).
+## Home Assistant & Zigbee2MQTT External Converter
 
-When the device has joined the zigbee network, set the included icon at **<your_device_name>->Settings->icon** (device_icons/greenhouse_controller_image.png)
+Because this is a customized DIY device, an external converter is provided to integrate all features with Zigbee2MQTT and Home Assistant.
+
+### Installation
+1. Copy the provided `Zigbee2Mqtt/external_converters/greenhouse_controller.js` file to your Zigbee2MQTT configuration folder (under `external_converters/`).
+2. Copy `Zigbee2Mqtt/device_icons/greenhouse_controller_icon.png` to your Zigbee2MQTT `device_icons/` folder.
+3. Add the external converter to your Zigbee2MQTT `configuration.yaml`:
+   ```yaml
+   external_converters:
+     - greenhouse_controller.js
+   ```
+4. Restart Zigbee2MQTT.
+5. When the controller joins the Zigbee network, configure the device icon in the Zigbee2MQTT frontend at **<device_name> -> Settings (specific) -> Icon** (`device_icons/greenhouse_controller_icon.png`).
