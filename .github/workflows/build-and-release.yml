@@ -19,7 +19,7 @@ jobs:
 
       - name: Calculate Semantic Version
         id: semver
-        uses: paulhatch/semantic-version@v5.4.0
+        uses: paulhatch/semantic-version@v6.0.2
         with:
           tag_prefix: "v"
           major_pattern: "(MAJOR)"
@@ -47,7 +47,7 @@ jobs:
           extra_docker_args: "-e OTA_FILE_VERSION=${{ env.OTA_FILE_VERSION }} -e APP_VERSION=${{ env.APP_VERSION }}"
 
       - name: Upload Artifacts to Workflow Run
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: greenhouse-firmware-v${{ steps.semver.outputs.version }}
           path: |
@@ -55,7 +55,7 @@ jobs:
             src/build/*.ota
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.semver.outputs.version }}
           generate_release_notes: true
