@@ -21,6 +21,9 @@ This is a ESP-IDF embedded system project for a greenhouse irrigation controller
 ## Tesing
 - Add tests for new introduced or changed code when possible
 
+## Documentation
+- The `README.md` must ALWAYS be updated whenever functions, hardware configurations, endpoints, commands, or any user-facing functionality are introduced or modified.
+
 ## Git
 - NEVER push changes to **main** or **dev** branches
 - You must create a new branch named 'feat/<descriptive_branch_name>' originating from **dev** when you are ready to commit and push a new feature. Make sure to fetch latest changes from **dev** first
