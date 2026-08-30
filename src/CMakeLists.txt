@@ -4,8 +4,6 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 list(PREPEND SDKCONFIG_DEFAULTS "sdkconfig.defaults")
 
-project(greenhouse_controller)
-
 if(DEFINED ENV{APP_VERSION})
     set(APP_VERSION $ENV{APP_VERSION})
 else()
@@ -17,6 +15,8 @@ if(DEFINED ENV{OTA_FILE_VERSION})
 else()
     set(OTA_FILE_VERSION 0x01010110)
 endif()
+
+project(greenhouse_controller)
 
 add_custom_command(TARGET gen_project_binary POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Generating Zigbee OTA Image with Version ${OTA_FILE_VERSION}..."
