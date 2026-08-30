@@ -26,10 +26,16 @@ menu "Greenhouse Controller Configuration"
                 GPIO pin used to control the pump relay
 
         config GH_BUTTON_GPIO_PIN
-            int "Manual Button GPIO Pin"
+            int "Pump Manual Override Button Pin"
             default 21
             help
-                GPIO pin for the manual override button
+                GPIO pin for the manual override button to toggle the pump
+
+        config GH_PAIRING_BUTTON_GPIO_PIN
+            int "On-device Pairing Button Pin"
+            default 9
+            help
+                GPIO pin for the on-device physical button used for pairing (usually BOOT button on GPIO 9)
     endmenu
 
     menu "Zigbee Settings"

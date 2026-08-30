@@ -98,6 +98,11 @@ void zigbee_report_attribute(uint8_t ep, uint16_t cluster_id, uint16_t attribute
  */
 bool zigbee_is_connected(void);
 
+/**
+ * @brief Factory reset the Zigbee stack. This will erase Zigbee NVRAM and restart the device.
+ */
+void zigbee_factory_reset(void);
+
 #ifdef __cplusplus
 }
 #endif

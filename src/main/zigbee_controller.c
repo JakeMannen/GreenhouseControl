@@ -23,10 +23,22 @@ bool zigbee_is_connected(void)
     return s_is_connected;
 }
 
+static bool s_pairing_mode_active = false;
+static esp_timer_handle_t s_pairing_window_timer;
+
+static void pairing_window_timer_cb(void *arg)
+{
+    ESP_LOGI(TAG, "Pairing window (3 minutes) expired. Stopping continuous steering.");
+    s_pairing_mode_active = false;
+    light_driver_set_error(); // Indicate pairing failed
+}
+
 static void steering_timer_cb(void *arg)
 {
-    ESP_LOGI(TAG, "Retrying network steering");
-    ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
+    if (s_pairing_mode_active) {
+        ESP_LOGD(TAG, "Retrying network steering in the background");
+        ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
+    }
 }
 
 static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
@@ -47,8 +59,10 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
                 ESP_LOGI(TAG, "Device started in%s factory-reset mode",
                         ezb_bdb_is_factory_new() ? "" : " non");
                 if (ezb_bdb_is_factory_new()) {
+                    s_pairing_mode_active = true;
+                    esp_timer_start_once(s_pairing_window_timer, 180000000); // 3 minutes timeout
                     light_driver_set_connecting(); // Indicate network join in progress
-                    ESP_LOGI(TAG, "Searching for an existing network to join");
+                    ESP_LOGI(TAG, "Searching for an existing network to join (3 min window)");
                     ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
                 } else {
                     light_driver_set_ok(2000); // Indicate successful rejoin
@@ -59,7 +73,9 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
                 ESP_LOGW(TAG, "%s failed (status: 0x%02x)",
                         ezb_app_signal_to_string(signal_type), status);
                 s_is_connected = false;
-                esp_timer_start_once(s_steering_timer, 2000000); // Retry after 2 seconds
+                if (s_pairing_mode_active) {
+                    esp_timer_start_once(s_steering_timer, 1000000); // Silent retry after 1 second
+                }
             }
         } break;
 
@@ -73,13 +89,23 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
                         "Joined network: PAN 0x%04hx, EXT 0x%llx, channel %d, short 0x%04hx",
                         ezb_nwk_get_panid(), ext_panid.u64,
                         ezb_nwk_get_current_channel(), ezb_nwk_get_short_address());
+                
+                if (s_pairing_mode_active) {
+                    s_pairing_mode_active = false;
+                    esp_timer_stop(s_pairing_window_timer);
+                }
+                
                 light_driver_set_success(); // Indicate successful network join
                 s_is_connected = true;
             } else {
-                light_driver_set_error(); // Indicate network join failure
-                ESP_LOGW(TAG, "Network steering failed (status: 0x%02x)", status);
                 s_is_connected = false;
-                esp_timer_start_once(s_steering_timer, 2000000); // Retry after 2 seconds
+                if (s_pairing_mode_active) {
+                    ESP_LOGD(TAG, "Network steering failed (status: 0x%02x), silently retrying...", status);
+                    esp_timer_start_once(s_steering_timer, 1000000); // Silent retry after 1 second
+                } else {
+                    ESP_LOGW(TAG, "Network steering failed (status: 0x%02x) outside pairing window", status);
+                    light_driver_set_error(); // Indicate network join failure
+                }
             }
         } break;
 
@@ -96,7 +122,7 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
         } break;
 
         default:
-            ESP_LOGI(TAG, "Zigbee signal: %s (0x%02x)",
+            ESP_LOGD(TAG, "Zigbee signal: %s (0x%02x)",
                     ezb_app_signal_to_string(signal_type), signal_type);
             break;
         }
@@ -400,6 +426,14 @@ static void zb_main_task(void *arg)
     };
     ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_steering_timer));
 
+    esp_timer_create_args_t pairing_timer_args = {
+        .callback = pairing_window_timer_cb,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "pairing_timer"
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&pairing_timer_args, &s_pairing_window_timer));
+
     ezb_aps_secur_enable_distributed_security(false);
     ESP_ERROR_CHECK(ezb_bdb_set_primary_channel_set(ZB_PRIMARY_CHANNEL_MASK));
     ESP_ERROR_CHECK(ezb_bdb_set_secondary_channel_set(ZB_SECONDARY_CHANNEL_MASK));
@@ -439,4 +473,10 @@ esp_err_t zigbee_controller_init(void)
     }
 
     return ESP_OK;
+}
+
+void zigbee_factory_reset(void)
+{
+    ESP_LOGI(TAG, "Factory resetting Zigbee stack...");
+    esp_zigbee_factory_reset();
 }
