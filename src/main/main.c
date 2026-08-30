@@ -19,7 +19,8 @@ static const char *TAG = "GREENHOUSE_MAIN";
 typedef enum {
     EVENT_TYPE_CLIMATE,
     EVENT_TYPE_ENERGY,
-    EVENT_TYPE_PUMP
+    EVENT_TYPE_PUMP,
+    EVENT_TYPE_FACTORY_RESET
 } event_type_t;
 
 typedef struct {
@@ -114,6 +115,16 @@ static void pump_state_changed_handler(bool is_on) {
     xQueueSend(s_app_event_queue, &evt, 0);
 }
 
+/**
+ * @brief Callback triggered when the button is pressed 3 times to initiate a factory reset.
+ */
+static void factory_reset_handler(void) {
+    app_event_t evt = {
+        .type = EVENT_TYPE_FACTORY_RESET
+    };
+    xQueueSend(s_app_event_queue, &evt, 0);
+}
+
 void app_main(void) {
 
     ESP_LOGI(TAG, "Initializing Greenhouse Controller...");
@@ -144,7 +155,7 @@ void app_main(void) {
 
     ESP_ERROR_CHECK(zigbee_controller_init()); // Start Zigbee in its own task
     light_driver_init(LIGHT_DEFAULT_OFF); // Initialize LED controller
-    ESP_ERROR_CHECK(gpio_drivers_init(pump_state_changed_handler)); // Initialize GPIO drivers
+    ESP_ERROR_CHECK(gpio_drivers_init(pump_state_changed_handler, factory_reset_handler)); // Initialize GPIO drivers
     ESP_ERROR_CHECK(sht30_init(SHT30_I2C_PORT, CONFIG_GH_SHT30_SDA_PIN, CONFIG_GH_SHT30_SCL_PIN, climate_change_handler));
     ESP_ERROR_CHECK(ve_direct_init(VE_DIRECT_UART_PORT, CONFIG_GH_VE_DIRECT_RX_PIN, energy_change_handler));
     
@@ -244,6 +255,11 @@ void app_main(void) {
                                            EZB_ZCL_STD_MANUF_CODE, &evt.data.pump_is_on, false);
                     zigbee_report_attribute(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF, EZB_ZCL_ATTR_ON_OFF_ON_OFF_ID);
                     esp_zigbee_lock_release();
+                    break;
+
+                case EVENT_TYPE_FACTORY_RESET:
+                    ESP_LOGW(TAG, "Executing Zigbee factory reset!");
+                    zigbee_factory_reset();
                     break;
             }
         }

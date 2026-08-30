@@ -23,10 +23,22 @@ bool zigbee_is_connected(void)
     return s_is_connected;
 }
 
+static bool s_pairing_mode_active = false;
+static esp_timer_handle_t s_pairing_window_timer;
+
+static void pairing_window_timer_cb(void *arg)
+{
+    ESP_LOGI(TAG, "Pairing window (3 minutes) expired. Stopping continuous steering.");
+    s_pairing_mode_active = false;
+    light_driver_set_error(); // Indicate pairing failed
+}
+
 static void steering_timer_cb(void *arg)
 {
-    ESP_LOGI(TAG, "Retrying network steering");
-    ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
+    if (s_pairing_mode_active) {
+        ESP_LOGD(TAG, "Retrying network steering in the background");
+        ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
+    }
 }
 
 static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
@@ -47,8 +59,10 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
                 ESP_LOGI(TAG, "Device started in%s factory-reset mode",
                         ezb_bdb_is_factory_new() ? "" : " non");
                 if (ezb_bdb_is_factory_new()) {
+                    s_pairing_mode_active = true;
+                    esp_timer_start_once(s_pairing_window_timer, 180000000); // 3 minutes timeout
                     light_driver_set_connecting(); // Indicate network join in progress
-                    ESP_LOGI(TAG, "Searching for an existing network to join");
+                    ESP_LOGI(TAG, "Searching for an existing network to join (3 min window)");
                     ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
                 } else {
                     light_driver_set_ok(2000); // Indicate successful rejoin
@@ -59,7 +73,9 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
                 ESP_LOGW(TAG, "%s failed (status: 0x%02x)",
                         ezb_app_signal_to_string(signal_type), status);
                 s_is_connected = false;
-                esp_timer_start_once(s_steering_timer, 2000000); // Retry after 2 seconds
+                if (s_pairing_mode_active) {
+                    esp_timer_start_once(s_steering_timer, 1000000); // Silent retry after 1 second
+                }
             }
         } break;
 
@@ -73,13 +89,23 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
                         "Joined network: PAN 0x%04hx, EXT 0x%llx, channel %d, short 0x%04hx",
                         ezb_nwk_get_panid(), ext_panid.u64,
                         ezb_nwk_get_current_channel(), ezb_nwk_get_short_address());
+                
+                if (s_pairing_mode_active) {
+                    s_pairing_mode_active = false;
+                    esp_timer_stop(s_pairing_window_timer);
+                }
+                
                 light_driver_set_success(); // Indicate successful network join
                 s_is_connected = true;
             } else {
-                light_driver_set_error(); // Indicate network join failure
-                ESP_LOGW(TAG, "Network steering failed (status: 0x%02x)", status);
                 s_is_connected = false;
-                esp_timer_start_once(s_steering_timer, 2000000); // Retry after 2 seconds
+                if (s_pairing_mode_active) {
+                    ESP_LOGD(TAG, "Network steering failed (status: 0x%02x), silently retrying...", status);
+                    esp_timer_start_once(s_steering_timer, 1000000); // Silent retry after 1 second
+                } else {
+                    ESP_LOGW(TAG, "Network steering failed (status: 0x%02x) outside pairing window", status);
+                    light_driver_set_error(); // Indicate network join failure
+                }
             }
         } break;
 
@@ -96,7 +122,7 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
         } break;
 
         default:
-            ESP_LOGI(TAG, "Zigbee signal: %s (0x%02x)",
+            ESP_LOGD(TAG, "Zigbee signal: %s (0x%02x)",
                     ezb_app_signal_to_string(signal_type), signal_type);
             break;
         }
@@ -189,6 +215,18 @@ static esp_err_t zb_register_climate_endpoint(ezb_af_device_desc_t device_desc)
     ezb_zcl_cluster_desc_t humidity_cluster = ezb_zcl_rel_humidity_measurement_create_cluster_desc(&humidity_meas_cfg, EZB_ZCL_CLUSTER_SERVER);
     ezb_zcl_cluster_desc_t temperature_cluster = ezb_zcl_temperature_measurement_create_cluster_desc(&temperature_meas_cfg, EZB_ZCL_CLUSTER_SERVER);
 
+    // Force temperature to be reportable
+    ezb_zcl_attr_desc_t temp_desc = ezb_zcl_cluster_get_attr_desc(temperature_cluster, EZB_ZCL_ATTR_TEMPERATURE_MEASUREMENT_MEASURED_VALUE_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (temp_desc) {
+        ezb_zcl_attr_desc_set_access(temp_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_REPORTING);
+    }
+
+    // Force humidity to be reportable
+    ezb_zcl_attr_desc_t hum_desc = ezb_zcl_cluster_get_attr_desc(humidity_cluster, EZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_MEASURED_VALUE_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (hum_desc) {
+        ezb_zcl_attr_desc_set_access(hum_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_REPORTING);
+    }
+
     // Create the Climate endpoint configuration
     ezb_af_ep_config_t climate_ep_config = {
         .ep_id              = ZB_CLIMATE_ENDPOINT_ID,
@@ -201,7 +239,6 @@ static esp_err_t zb_register_climate_endpoint(ezb_af_device_desc_t device_desc)
     // Add clusters to the endpoint
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(climate_ep_desc, humidity_cluster), TAG, "add humidity cluster failed");
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(climate_ep_desc, temperature_cluster), TAG, "add temperature cluster failed");
-
 
     ESP_RETURN_ON_ERROR(ezb_af_device_add_endpoint_desc(device_desc, climate_ep_desc), TAG, "add temperature/humidity endpoint failed");
     return ESP_OK;
@@ -241,6 +278,13 @@ static esp_err_t zb_register_pump_endpoint(ezb_af_device_desc_t device_desc)
         .image_type_id = 0x1011,
     };
     ezb_zcl_cluster_desc_t ota_cluster = ezb_zcl_ota_upgrade_create_cluster_desc(&ota_client_config, EZB_ZCL_CLUSTER_CLIENT);
+
+#ifdef OTA_FILE_VERSION
+    static uint32_t ota_file_version = OTA_FILE_VERSION;
+    ezb_zcl_ota_upgrade_cluster_desc_add_attr(ota_cluster, EZB_ZCL_ATTR_OTA_UPGRADE_CURRENT_FILE_VERSION_ID, &ota_file_version);
+    ezb_zcl_ota_upgrade_cluster_desc_add_attr(ota_cluster, EZB_ZCL_ATTR_OTA_UPGRADE_DOWNLOADED_FILE_VERSION_ID, &ota_file_version);
+#endif
+
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, ota_cluster), TAG, "add ota cluster failed");
 
     // Add power config cluster to report battery voltage and percentage
@@ -389,6 +433,14 @@ static void zb_main_task(void *arg)
     };
     ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_steering_timer));
 
+    esp_timer_create_args_t pairing_timer_args = {
+        .callback = pairing_window_timer_cb,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "pairing_timer"
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&pairing_timer_args, &s_pairing_window_timer));
+
     ezb_aps_secur_enable_distributed_security(false);
     ESP_ERROR_CHECK(ezb_bdb_set_primary_channel_set(ZB_PRIMARY_CHANNEL_MASK));
     ESP_ERROR_CHECK(ezb_bdb_set_secondary_channel_set(ZB_SECONDARY_CHANNEL_MASK));
@@ -396,6 +448,8 @@ static void zb_main_task(void *arg)
 
     ESP_ERROR_CHECK(zb_register_endpoints());
     ezb_zcl_ota_upgrade_cluster_client_init(ZB_PUMP_1_ENDPOINT_ID);
+    ezb_zcl_ota_upgrade_set_hw_version(ZB_PUMP_1_ENDPOINT_ID, ZB_MODEL_HW_VERSION);
+    ezb_af_node_desc_set_manuf_code(0x1001);
 
     ESP_ERROR_CHECK(esp_zigbee_start(false));
 
@@ -428,4 +482,10 @@ esp_err_t zigbee_controller_init(void)
     }
 
     return ESP_OK;
+}
+
+void zigbee_factory_reset(void)
+{
+    ESP_LOGI(TAG, "Factory resetting Zigbee stack...");
+    esp_zigbee_factory_reset();
 }

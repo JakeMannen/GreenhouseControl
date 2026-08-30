@@ -14,9 +14,10 @@ extern "C" {
  * @brief Initialize the GPIOs for the pump and button.
  * 
  * @param pump_state_changed_cb Callback function to notify other modules (e.g. Zigbee) of a pump state change.
+ * @param factory_reset_cb Callback function triggered when a factory reset sequence is detected (3 quick button presses).
  * @return esp_err_t ESP_OK on success, error code otherwise
  */
-esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on));
+esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on), void (*factory_reset_cb)(void));
 
 /**
  * @brief Set the pump state (On or Off).
