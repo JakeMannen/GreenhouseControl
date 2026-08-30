@@ -141,6 +141,16 @@ static esp_err_t add_basic_cluster_to_endpoint(ezb_af_ep_desc_t *endpoint_desc) 
     memcpy(&model_p_string[1], ZB_MODEL_IDENTIFIER, model_p_string[0]);
 
     static uint8_t model_hw_version = (uint8_t)ZB_MODEL_HW_VERSION;
+    static uint8_t app_version = (uint8_t)ZB_APP_VERSION;
+
+    // Format software build ID as a Zigbee string (max 16 chars per ZCL spec)
+    static uint8_t sw_build_p_string[17];
+    size_t sw_len = sizeof(ZB_SW_BUILD_ID) - 1;
+    if (sw_len > 16) {
+        sw_len = 16;
+    }
+    sw_build_p_string[0] = (uint8_t)sw_len;
+    memcpy(&sw_build_p_string[1], ZB_SW_BUILD_ID, sw_len);
     
     // If there is no Basic cluster on this endpoint yet, create it and add it to the endpoint.
      ezb_zcl_basic_cluster_server_config_t basic_cfg = {
@@ -154,6 +164,8 @@ static esp_err_t add_basic_cluster_to_endpoint(ezb_af_ep_desc_t *endpoint_desc) 
     ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID,(void *) manuf_p_string);
     ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID,(void *) model_p_string);
     ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_HW_VERSION_ID,(void *) &model_hw_version);
+    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_APPLICATION_VERSION_ID,(void *) &app_version);
+    ezb_zcl_basic_cluster_desc_add_attr(basic, EZB_ZCL_ATTR_BASIC_SW_BUILD_ID_ID,(void *) sw_build_p_string);
     return ESP_OK;
 
 }

@@ -57,18 +57,24 @@ typedef void (*energy_report_callback_t)(ve_direct_data_t *data);
 /**
  * @brief Initialize UART for reading the Victron VE.Direct text stream.
  * 
- * @param port UART port number
- * @param rx_pin GPIO pin for RX (connected to VE.Direct TX)
- * @param energy_cb Callback function to report data
- * @return esp_err_t ESP_OK on success, error code otherwise
+ * @param port UART port number.
+ * @param rx_pin GPIO pin for RX (connected to VE.Direct TX).
+ * @param energy_cb Callback function to report data.
+ * 
+ * @return 
+ *     - ESP_OK: Success.
+ *     - Other error code: Failed.
  */
 esp_err_t ve_direct_init(uart_port_t port, gpio_num_t rx_pin, energy_report_callback_t energy_cb);
 
 /**
  * @brief Retrieve the latest parsed VE.Direct telemetry data.
  * 
- * @param data Pointer to a struct where the telemetry data will be copied
- * @return true if new data was retrieved since the last call, false otherwise
+ * @param data Pointer to a struct where the telemetry data will be copied.
+ * 
+ * @return 
+ *     - true: New data was retrieved since the last call.
+ *     - false: No new data available.
  */
 bool ve_direct_get_data(ve_direct_data_t *data);
 

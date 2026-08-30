@@ -21,11 +21,14 @@ uint8_t sht30_crc8(const uint8_t *data, size_t len);
 /**
  * @brief Initialize the SHT30 sensor and start the polling task.
  * 
- * @param port I2C port number
- * @param sda_pin GPIO pin for SDA
- * @param scl_pin GPIO pin for SCL
- * @param report_cb Callback function to report climate measurements
- * @return esp_err_t ESP_OK on success, error code otherwise
+ * @param port I2C port number.
+ * @param sda_pin GPIO pin for SDA.
+ * @param scl_pin GPIO pin for SCL.
+ * @param report_cb Callback function to report climate measurements.
+ * 
+ * @return 
+ *     - ESP_OK: Success.
+ *     - Other error code: Failed.
  */
 esp_err_t sht30_init(i2c_port_t port, gpio_num_t sda_pin, gpio_num_t scl_pin, climate_report_callback_t report_cb);
 

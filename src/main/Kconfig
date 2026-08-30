@@ -50,6 +50,18 @@ menu "Greenhouse Controller Configuration"
             default 1
             help
                 Zigbee Hardware Version
+
+        config GH_ZIGBEE_APP_VERSION
+            int "Application Version"
+            default 1
+            help
+                Zigbee Application Version
+
+        config GH_ZIGBEE_SW_BUILD_ID
+            string "Software Build ID"
+            default "1.0.0"
+            help
+                Zigbee Software Build ID
     endmenu
 
     menu "Misc Settings"
