@@ -111,7 +111,7 @@ const definition = {
         // Configure reporting for climate (temperature & humidity) clusters
         try {
             await endpoint_climate.configureReporting('msTemperatureMeasurement', [
-                {attribute: 'measuredValue', minimumReportInterval: 10, maximumReportInterval: 300, reportableChange: 50} // 0.50 °C
+                {attribute: 'measuredValue', minimumReportInterval: 10, maximumReportInterval: 300, reportableChange: 10} // 0.10 °C
             ]);
             await endpoint_climate.configureReporting('msRelativeHumidity', [
                 {attribute: 'measuredValue', minimumReportInterval: 10, maximumReportInterval: 300, reportableChange: 100} // 1.00 %
