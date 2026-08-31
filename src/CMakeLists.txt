@@ -22,6 +22,8 @@ else()
     string(TIMESTAMP BUILD_DATE "%Y%m%d")
 endif()
 
+set(PROJECT_VER ${APP_VERSION})
+
 project(greenhouse_controller)
 
 add_custom_command(TARGET gen_project_binary POST_BUILD
