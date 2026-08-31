@@ -1,0 +1,44 @@
+name: Branch Flow Validation
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+jobs:
+  validate-branch-flow:
+    name: Validate PR Branch Strategy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify GitFlow Branch Hierarchy
+        run: |
+          BASE_REF="${{ github.base_ref }}"
+          HEAD_REF="${{ github.head_ref }}"
+
+          echo "Base branch (target): $BASE_REF"
+          echo "Head branch (source): $HEAD_REF"
+
+          # Rule 1: PRs targeting 'main' must only originate from 'dev'
+          if [ "$BASE_REF" = "main" ]; then
+            if [ "$HEAD_REF" != "dev" ]; then
+              echo "::error::Direct Pull Requests to 'main' are only allowed from 'dev' (GitFlow release flow). Current source: '$HEAD_REF'."
+              exit 1
+            fi
+            echo "Valid release PR (dev -> main)."
+          fi
+
+          # Rule 2: PRs targeting 'dev' must originate from feature branches (feature/* or feat/*)
+          if [ "$BASE_REF" = "dev" ]; then
+            case "$HEAD_REF" in
+              feature/*|feat/*)
+                echo "Valid feature PR ($HEAD_REF -> dev)."
+                ;;
+              *)
+                echo "::error::Pull Requests to 'dev' must originate from a 'feature/*' or 'feat/*' branch. Current source: '$HEAD_REF'."
+                exit 1
+                ;;
+            esac
+          fi

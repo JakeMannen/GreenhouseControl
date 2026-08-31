@@ -259,10 +259,11 @@ static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id,
                         m->out.result = EZB_ZCL_STATUS_FAIL;
                         break;
                     }
-                    ESP_LOGI(TAG, "Writing to OTA partition subtype %d at offset 0x%lx",
-                             s_ota_partition->subtype, (unsigned long)s_ota_partition->address);
+                    ESP_LOGI(TAG, "Writing to OTA partition subtype %d at offset 0x%lx (size=%lu)",
+                             s_ota_partition->subtype, (unsigned long)s_ota_partition->address, (unsigned long)s_ota_total_size);
 
-                    esp_err_t err = esp_ota_begin(s_ota_partition, OTA_WITH_SEQUENTIAL_WRITES, &s_ota_handle);
+                    // Pre-erase the required image size in flash upfront so packet writes during download are instantaneous
+                    esp_err_t err = esp_ota_begin(s_ota_partition, s_ota_total_size > 0 ? s_ota_total_size : OTA_SIZE_UNKNOWN, &s_ota_handle);
                     if (err != ESP_OK) {
                         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
                         s_ota_in_progress = false;
@@ -286,7 +287,13 @@ static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id,
 
                     esp_err_t err = ota_stream_write_block(m->in.receiving.file_offset, m->in.receiving.block, m->in.receiving.block_size);
                     if (err != ESP_OK) {
-                        ESP_LOGE(TAG, "Failed writing OTA block at offset %lu", (unsigned long)m->in.receiving.file_offset);
+                        ESP_LOGE(TAG, "Failed writing OTA block at offset %lu: %s. Aborting OTA session.",
+                                 (unsigned long)m->in.receiving.file_offset, esp_err_to_name(err));
+                        if (s_ota_handle) {
+                            esp_ota_abort(s_ota_handle);
+                            s_ota_handle = 0;
+                        }
+                        s_ota_in_progress = false;
                         m->out.result = EZB_ZCL_STATUS_FAIL;
                     } else {
                         m->out.result = EZB_ZCL_STATUS_SUCCESS;
@@ -381,6 +388,7 @@ static bool zb_raw_frame_handler(const ezb_zcl_raw_frame_t *raw_frame)
                  payload_type, query_jitter, raw_frame->header->src_addr.u.short_addr, raw_frame->header->src_ep);
 
         // Send QueryNextImageRequest to the sender
+        // Setting file_version to 0 ensures OTA server serves available firmware (including downgrades/forced updates)
         ezb_zcl_ota_upgrade_query_next_image_req_cmd_t query_req = {
             .cmd_ctrl = {
                 .dst_ep = raw_frame->header->src_ep,
@@ -392,11 +400,7 @@ static bool zb_raw_frame_handler(const ezb_zcl_raw_frame_t *raw_frame)
                 .fc = 0,
                 .manuf_code = 0x1001,
                 .image_type = 0x1011,
-#ifdef OTA_FILE_VERSION
-                .file_version = OTA_FILE_VERSION,
-#else
                 .file_version = 0,
-#endif
                 .hw_version = ZB_MODEL_HW_VERSION,
             },
         };
@@ -722,7 +726,7 @@ static void zb_main_task(void *arg)
     ezb_zcl_raw_command_handler_register(zb_raw_frame_handler);
     ezb_zcl_ota_upgrade_cluster_client_init(ZB_PUMP_1_ENDPOINT_ID);
     ezb_zcl_ota_upgrade_set_hw_version(ZB_PUMP_1_ENDPOINT_ID, ZB_MODEL_HW_VERSION);
-    ezb_zcl_ota_upgrade_set_download_block_size(ZB_PUMP_1_ENDPOINT_ID, 223);
+    ezb_zcl_ota_upgrade_set_download_block_size(ZB_PUMP_1_ENDPOINT_ID, 50);
     ezb_af_node_desc_set_manuf_code(0x1001);
 
     ESP_ERROR_CHECK(esp_zigbee_start(false));
@@ -744,6 +748,11 @@ void zigbee_report_attribute(uint8_t ep, uint16_t cluster_id, uint16_t attribute
     
     ezb_zcl_report_attr_cmd_req(&report_attr_cmd);
     ESP_LOGD(TAG, "Sent report request for EP:%d, Cluster:0x%04X, Attr:0x%04X", ep, cluster_id, attribute_id);
+}
+
+bool zigbee_is_ota_in_progress(void)
+{
+    return s_ota_in_progress;
 }
 
 esp_err_t zigbee_controller_init(void)

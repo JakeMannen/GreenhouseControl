@@ -39,7 +39,7 @@ static QueueHandle_t s_app_event_queue = NULL;
  * Posts the climate event to the central event queue if Zigbee is connected.
  */
 static void climate_change_handler(gh_climate_data_t *climate_data){
-    if (!zigbee_is_connected()) {
+    if (!zigbee_is_connected() || zigbee_is_ota_in_progress()) {
         return;
     }
 
@@ -59,7 +59,7 @@ static void energy_change_handler(ve_direct_data_t *energy_data){
     static int64_t last_report_time = 0;
     int64_t now = esp_timer_get_time();
     
-    if (!zigbee_is_connected()) {
+    if (!zigbee_is_connected() || zigbee_is_ota_in_progress()) {
         return;
     }
 
@@ -165,6 +165,10 @@ void app_main(void) {
         if (xQueueReceive(s_app_event_queue, &evt, portMAX_DELAY)) {
             switch (evt.type) {
                 case EVENT_TYPE_CLIMATE:
+                    if (zigbee_is_ota_in_progress()) {
+                        ESP_LOGD(TAG, "Skipping climate reporting during OTA transfer");
+                        break;
+                    }
                     ESP_LOGI(TAG, "Updating climate data: Temp %d (0.01 C), Humidity %d (0.01 %%)",
                              evt.data.climate.temperature, evt.data.climate.humidity);
                     esp_zigbee_lock_acquire(portMAX_DELAY);
@@ -179,6 +183,10 @@ void app_main(void) {
                     break;
 
                 case EVENT_TYPE_ENERGY:
+                    if (zigbee_is_ota_in_progress()) {
+                        ESP_LOGD(TAG, "Skipping energy reporting during OTA transfer");
+                        break;
+                    }
                     ESP_LOGI(TAG, "Reporting new energy data: Battery %d mV, Solar %d mV, %d mA, %d W, Load %d mA (%s)", 
                              evt.data.energy.battery_voltage_mv, evt.data.energy.panel_voltage_mv, 
                              evt.data.energy.charge_current_ma, evt.data.energy.panel_power_w,
@@ -247,6 +255,10 @@ void app_main(void) {
                     break;
 
                 case EVENT_TYPE_PUMP:
+                    if (zigbee_is_ota_in_progress()) {
+                        ESP_LOGD(TAG, "Skipping pump state reporting during OTA transfer");
+                        break;
+                    }
                     ESP_LOGI(TAG, "Reporting pump state over Zigbee: %s", evt.data.pump_is_on ? "ON" : "OFF");
                     esp_zigbee_lock_acquire(portMAX_DELAY);
                     ezb_zcl_set_attr_value(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF,

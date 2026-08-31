@@ -141,6 +141,11 @@ This device supports Zigbee OTA updates to flash new firmware wirelessly without
 
 The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files and attaches them to GitHub Releases. Because this is a custom local device, OTA updates are uploaded directly through Zigbee2MQTT.
 
+**Key Technical Details:**
+* **Block Size**: 50 bytes per chunk (fits in a single unfragmented 802.15.4 frame).
+* **Partition Pre-Erase**: Target flash partition is pre-erased upfront upon transfer start to eliminate flash erase stalls during chunk reception.
+* **Reporting Suppression**: Sensor attribute reporting is automatically paused during OTA downloads to prioritize radio bandwidth.
+
 **How to perform an OTA update:**
 1. Navigate to the [Releases page](../../releases) on this GitHub repository.
 2. Download the `.ota` file (e.g., `greenhouse_controller-v1.2.3.ota`) from the latest release.
@@ -148,6 +153,8 @@ The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files a
 4. Go to **OTA** in the top navigation bar.
 5. Under the **Local OTA file** section, upload the downloaded `.ota` file.
 6. Trigger the OTA update for your device.
+
+*(Note: To downgrade or force-install an older firmware build, trigger the update via the Zigbee2MQTT MQTT downgrade endpoint `zigbee2mqtt/bridge/request/device/ota_update/update/downgrade` with payload `{"id": "<device_id>"}`).*
 
 ---
 
@@ -165,3 +172,22 @@ Because this is a customized DIY device, an external converter is provided to in
    ```
 4. Restart Zigbee2MQTT.
 5. When the controller joins the Zigbee network, configure the device icon in the Zigbee2MQTT frontend at **<device_name> -> Settings (specific) -> Icon** (`device_icons/greenhouse_controller_icon.png`).
+
+---
+
+## Development Workflow & GitFlow
+
+The project strictly follows a simplified **GitFlow** branching model:
+
+```
+feature/* ──(PR)──> dev ──(Release PR)──> main
+```
+
+* **`main`**: Production & release branch. Receives merges only from `dev` via Pull Requests. Every merge to `main` triggers automated semantic tagging, GitHub Releases, and Zigbee OTA binary generation.
+* **`dev`**: Default integration branch. All feature branches branch off from `dev` and are merged back into `dev` via Pull Requests. Merges to `dev` generate pre-release OTA builds.
+* **`feat/*`** / **`feature/*`**: Short-lived branches used for developing features and fixes.
+
+### CI/CD Automation & Quality Gates
+* **PR Branch Flow Validation** (`.github/workflows/branch-check.yml`): Enforces that feature PRs target `dev`, and PRs to `main` originate exclusively from `dev`.
+* **PR Semantic Title Linter** (`.github/workflows/pr-linter.yml`): Validates Conventional Commit PR title formatting (e.g., `feat: ...`, `fix: ...`, `docs: ...`).
+* **Build & Release Pipeline** (`.github/workflows/build-and-release.yml`): Firmware builds and releases occur exclusively on merge to `dev` (pre-release OTA) and `main` (production release OTA). No builds run on feature branches or unmerged PRs.
