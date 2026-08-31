@@ -35,8 +35,13 @@ jobs:
           MAJOR=${{ steps.semver.outputs.major }}
           MINOR=${{ steps.semver.outputs.minor }}
           PATCH=${{ steps.semver.outputs.patch }}
-          # Zigbee File Version Format: uint32 (Major, Minor, Patch, Reserved)
-          HEX_VER=$(printf "0x%02x%02x%02x00" $MAJOR $MINOR $PATCH)
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            BUILD=0
+          else
+            BUILD=${{ steps.semver.outputs.increment }}
+          fi
+          # Zigbee File Version Format: uint32 (Major, Minor, Patch, Build/Increment)
+          HEX_VER=$(printf "0x%02x%02x%02x%02x" $MAJOR $MINOR $PATCH $BUILD)
           echo "OTA_FILE_VERSION=$HEX_VER" >> $GITHUB_ENV
           echo "APP_VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
           echo "Semantic version converted to $HEX_VER"

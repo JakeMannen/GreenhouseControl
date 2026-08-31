@@ -141,6 +141,11 @@ This device supports Zigbee OTA updates to flash new firmware wirelessly without
 
 The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files and attaches them to GitHub Releases. Because this is a custom local device, OTA updates are uploaded directly through Zigbee2MQTT.
 
+**Key Technical Details:**
+* **Block Size**: 50 bytes per chunk (fits in a single unfragmented 802.15.4 frame).
+* **Partition Pre-Erase**: Target flash partition is pre-erased upfront upon transfer start to eliminate flash erase stalls during chunk reception.
+* **Reporting Suppression**: Sensor attribute reporting is automatically paused during OTA downloads to prioritize radio bandwidth.
+
 **How to perform an OTA update:**
 1. Navigate to the [Releases page](../../releases) on this GitHub repository.
 2. Download the `.ota` file (e.g., `greenhouse_controller-v1.2.3.ota`) from the latest release.
@@ -148,6 +153,8 @@ The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files a
 4. Go to **OTA** in the top navigation bar.
 5. Under the **Local OTA file** section, upload the downloaded `.ota` file.
 6. Trigger the OTA update for your device.
+
+*(Note: To downgrade or force-install an older firmware build, trigger the update via the Zigbee2MQTT MQTT downgrade endpoint `zigbee2mqtt/bridge/request/device/ota_update/update/downgrade` with payload `{"id": "<device_id>"}`).*
 
 ---
 
