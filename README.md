@@ -165,3 +165,22 @@ Because this is a customized DIY device, an external converter is provided to in
    ```
 4. Restart Zigbee2MQTT.
 5. When the controller joins the Zigbee network, configure the device icon in the Zigbee2MQTT frontend at **<device_name> -> Settings (specific) -> Icon** (`device_icons/greenhouse_controller_icon.png`).
+
+---
+
+## Development Workflow & GitFlow
+
+The project strictly follows a simplified **GitFlow** branching model:
+
+```
+feature/* ──(PR)──> dev ──(Release PR)──> main
+```
+
+* **`main`**: Production & release branch. Receives merges only from `dev` via Pull Requests. Every merge to `main` triggers automated semantic tagging, GitHub Releases, and Zigbee OTA binary generation.
+* **`dev`**: Default integration branch. All feature branches branch off from `dev` and are merged back into `dev` via Pull Requests. Merges to `dev` generate pre-release OTA builds.
+* **`feat/*`** / **`feature/*`**: Short-lived branches used for developing features and fixes.
+
+### CI/CD Automation & Quality Gates
+* **PR Branch Flow Validation** (`.github/workflows/branch-check.yml`): Enforces that feature PRs target `dev`, and PRs to `main` originate exclusively from `dev`.
+* **PR Semantic Title Linter** (`.github/workflows/pr-linter.yml`): Validates Conventional Commit PR title formatting (e.g., `feat: ...`, `fix: ...`, `docs: ...`).
+* **Build & Release Pipeline** (`.github/workflows/build-and-release.yml`): Firmware builds and releases occur exclusively on merge to `dev` (pre-release OTA) and `main` (production release OTA). No builds run on feature branches or unmerged PRs.
