@@ -115,8 +115,8 @@ The controller exposes four endpoints under the Zigbee Home Automation (HA) prof
 
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
-| `0x0402` | Temperature Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Temperature in 0.01 °C resolution (-40.00 °C to 125.00 °C). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 300s, delta 0.10 °C). |
-| `0x0405` | Relative Humidity Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Relative Humidity in 0.01 % resolution (0.00 % to 100.00 %). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 300s, delta 1.00 %). |
+| `0x0402` | Temperature Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Temperature in 0.01 °C resolution (-40.00 °C to 125.00 °C). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 3600s, delta 0.50 °C). |
+| `0x0405` | Relative Humidity Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Relative Humidity in 0.01 % resolution (0.00 % to 100.00 %). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 3600s, delta 1.00 %). |
 
 ### Endpoint 3: Solar Panel Monitoring
 * **Endpoint ID**: `3`
