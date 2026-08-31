@@ -14,6 +14,7 @@
 #include "ezbee/zcl/cluster/ota_upgrade_desc.h"
 #include "ezbee/zcl/cluster/ota_file.h"
 #include "esp_ota_ops.h"
+#include "esp_app_desc.h"
 #include "esp_partition.h"
 #include "led.h"
 
@@ -445,13 +446,15 @@ static esp_err_t add_basic_cluster_to_endpoint(ezb_af_ep_desc_t *endpoint_desc) 
     static uint8_t app_version = (uint8_t)ZB_APP_VERSION;
 
     // Format software build ID as a Zigbee string (max 16 chars per ZCL spec)
-    static uint8_t sw_build_p_string[17];
-    size_t sw_len = sizeof(ZB_SW_BUILD_ID) - 1;
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    const char *sw_ver = (app_desc && app_desc->version[0] != '\0') ? app_desc->version : ZB_SW_BUILD_ID;
+    size_t sw_len = strlen(sw_ver);
     if (sw_len > 16) {
         sw_len = 16;
     }
+    static uint8_t sw_build_p_string[17];
     sw_build_p_string[0] = (uint8_t)sw_len;
-    memcpy(&sw_build_p_string[1], ZB_SW_BUILD_ID, sw_len);
+    memcpy(&sw_build_p_string[1], sw_ver, sw_len);
     
     // If there is no Basic cluster on this endpoint yet, create it and add it to the endpoint.
     ezb_zcl_basic_cluster_server_config_t basic_cfg = {
