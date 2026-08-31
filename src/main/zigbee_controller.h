@@ -105,6 +105,15 @@ void zigbee_report_attribute(uint8_t ep, uint16_t cluster_id, uint16_t attribute
 bool zigbee_is_connected(void);
 
 /**
+ * @brief Check if an OTA firmware download is currently in progress.
+ * 
+ * @return 
+ *     - true: OTA in progress.
+ *     - false: No OTA in progress.
+ */
+bool zigbee_is_ota_in_progress(void);
+
+/**
  * @brief Factory reset the Zigbee stack. This will erase Zigbee NVRAM and restart the device.
  */
 void zigbee_factory_reset(void);
