@@ -24,11 +24,19 @@ This is a ESP-IDF embedded system project for a greenhouse irrigation controller
 ## Documentation
 - The `README.md` must ALWAYS be updated whenever functions, hardware configurations, endpoints, commands, or any user-facing functionality are introduced or modified.
 
-## Git
-- NEVER push changes to **main** or **dev** branches
-- You must create a new branch named 'feat/<descriptive_branch_name>' originating from **dev** when you are ready to commit and push a new feature. Make sure to fetch latest changes from **dev** first
-- Use short descriptive PR titles that reflects the changes with required conventional commit title and summary of changes in description
-- Run tests and verify project builds before commiting changes
+## Git (GitFlow Model)
+- Repository strictly uses a simplified **GitFlow** branching strategy with only **`main`**, **`dev`**, and **`feature/*`** (or **`feat/*`**) branches.
+- **NEVER** push changes directly to **`main`** or **`dev`** branches.
+- **Feature flow**:
+  - Always fetch the latest changes from `dev` before creating a feature branch.
+  - Create a new feature branch named `feat/<descriptive_branch_name>` originating from `dev`.
+  - Feature PRs must target `dev` (enforced by CI branch validation).
+- **Release flow**:
+  - Releases are made by opening a PR from `dev` targeting `main`.
+  - Merging `dev` into `main` triggers automated semantic release and Zigbee OTA firmware artifact generation.
+- **Pull Requests & Commits**:
+  - Use short descriptive PR titles following Conventional Commits format (e.g., `feat(sensor): ...`, `fix(ota): ...`), enforced by the PR Linter.
+  - Run tests and verify the project builds (`idf.py -C src build`) before committing changes or opening a PR.
 
 ## Executing commands
 - When esp-idf commands like "idf.py build" or "idf.py menuconfig" needs to be used, if the dev container is not running start it by executing:
