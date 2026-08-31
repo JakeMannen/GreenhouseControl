@@ -183,5 +183,4 @@ feature/* ──(PR)──> dev ──(Release PR)──> main
 ### CI/CD Automation & Quality Gates
 * **PR Branch Flow Validation** (`.github/workflows/branch-check.yml`): Enforces that feature PRs target `dev`, and PRs to `main` originate exclusively from `dev`.
 * **PR Semantic Title Linter** (`.github/workflows/pr-linter.yml`): Validates Conventional Commit PR title formatting (e.g., `feat: ...`, `fix: ...`, `docs: ...`).
-* **CI Build Check** (`.github/workflows/ci.yml`): Compiles the ESP-IDF project inside a container on every PR targeting `dev` or `main`.
-* **Build & Release Pipeline** (`.github/workflows/build-and-release.yml`): Automatically calculates semantic versions, converts version strings to Zigbee OTA format (`0xMMmmpp00`), and publishes releases with `.ota` binaries.
+* **Build & Release Pipeline** (`.github/workflows/build-and-release.yml`): Firmware builds and releases occur exclusively on merge to `dev` (pre-release OTA) and `main` (production release OTA). No builds run on feature branches or unmerged PRs.
