@@ -119,6 +119,13 @@ const definition = {
         } catch (e) {
             console.error(`Failed to configure climate reporting: ${e}`);
         }
+
+        // Read current OTA file version
+        try {
+            await endpoint_pump.read('genOta', ['currentFileVersion']);
+        } catch (e) {
+            console.error(`Failed to read currentFileVersion: ${e}`);
+        }
     },
     
     // Convert Home Assistant commands to outgoing Zigbee packets
