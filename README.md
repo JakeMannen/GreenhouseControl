@@ -115,8 +115,8 @@ The controller exposes four endpoints under the Zigbee Home Automation (HA) prof
 
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
-| `0x0402` | Temperature Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Temperature in 0.01 °C resolution (-40.00 °C to 125.00 °C). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 300s, delta 0.50 °C). |
-| `0x0405` | Relative Humidity Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Relative Humidity in 0.01 % resolution (0.00 % to 100.00 %). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 300s, delta 1.00 %). |
+| `0x0402` | Temperature Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Temperature in 0.01 °C resolution (-40.00 °C to 125.00 °C). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 3600s, delta 0.50 °C). |
+| `0x0405` | Relative Humidity Measurement | `0x0000` (MeasuredValue)<br>`0x0001` (MinMeasuredValue)<br>`0x0002` (MaxMeasuredValue) | SHT30 Ambient Relative Humidity in 0.01 % resolution (0.00 % to 100.00 %). Supports configurable ZCL reporting in Zigbee2MQTT (default: min 10s, max 3600s, delta 1.00 %). |
 
 ### Endpoint 3: Solar Panel Monitoring
 * **Endpoint ID**: `3`
@@ -142,6 +142,7 @@ This device supports Zigbee OTA updates to flash new firmware wirelessly without
 The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files and attaches them to GitHub Releases. Because this is a custom local device, OTA updates are uploaded directly through Zigbee2MQTT.
 
 **Key Technical Details:**
+* **Versioning Scheme**: Local builds default to `Firmware-ID: 0.0.1 <build_date>` and `Firmware-version: 256` (`0x00000100`). Automated CI release builds use semantic versioning (e.g., `v1.2.3` / `0x01020300`).
 * **Block Size**: 50 bytes per chunk (fits in a single unfragmented 802.15.4 frame).
 * **Partition Pre-Erase**: Target flash partition is pre-erased upfront upon transfer start to eliminate flash erase stalls during chunk reception.
 * **Reporting Suppression**: Sensor attribute reporting is automatically paused during OTA downloads to prioritize radio bandwidth.
