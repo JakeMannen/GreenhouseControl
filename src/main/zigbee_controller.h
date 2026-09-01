@@ -37,7 +37,11 @@ extern "C" {
 #endif
 
 #ifdef OTA_FILE_VERSION
-#define ZB_APP_VERSION             (uint8_t)((OTA_FILE_VERSION >> 24) & 0xFF)
+// Extract Major version (byte 3) from the 4-byte Zigbee OTA file version:
+//   [Major(8) | Build(8) | Minor(8) | Patch(8)]
+// Clamp to minimum 1 because ZCL spec reserves 0x00 as "not specified".
+#define ZB_APP_VERSION_RAW         (uint8_t)((OTA_FILE_VERSION >> 24) & 0xFF)
+#define ZB_APP_VERSION             (uint8_t)(ZB_APP_VERSION_RAW > 0 ? ZB_APP_VERSION_RAW : 1)
 #else
 #define ZB_APP_VERSION             CONFIG_GH_ZIGBEE_APP_VERSION
 #endif
