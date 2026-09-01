@@ -165,9 +165,8 @@ const definition = {
             key: ['switch_mode'],
             convertSet: async (entity, key, value, meta) => {
                 const isHold = value.toLowerCase() === 'hold';
-                const switchType = isHold ? 1 : 0;
                 const switchActions = isHold ? 0 : 2;
-                await entity.write('genOnOffSwitchCfg', { switchActions: switchActions, switchType: switchType }, meta.options);
+                await entity.write('genOnOffSwitchCfg', { switchActions: switchActions }, meta.options);
                 return { state: { switch_mode: isHold ? 'hold' : 'press' } };
             },
             convertGet: async (entity, key, meta) => {

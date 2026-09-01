@@ -671,7 +671,7 @@ static esp_err_t zb_register_pump_endpoint(ezb_af_device_desc_t device_desc)
     ezb_zcl_cluster_desc_t switch_config_cluster = ezb_zcl_on_off_switch_config_create_cluster_desc(&switch_cfg, EZB_ZCL_CLUSTER_SERVER);
     ezb_zcl_attr_desc_t st_desc = ezb_zcl_cluster_get_attr_desc(switch_config_cluster, EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_TYPE_ID, EZB_ZCL_STD_MANUF_CODE);
     if (st_desc) {
-        ezb_zcl_attr_desc_set_access(st_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_WRITE | EZB_ZCL_ATTR_ACCESS_REPORTING);
+        ezb_zcl_attr_desc_set_access(st_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_REPORTING);
     }
     ezb_zcl_attr_desc_t sa_desc = ezb_zcl_cluster_get_attr_desc(switch_config_cluster, EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_ACTIONS_ID, EZB_ZCL_STD_MANUF_CODE);
     if (sa_desc) {
