@@ -78,6 +78,18 @@ const definition = {
                 }
                 return Object.keys(result).length > 0 ? result : undefined;
             },
+        },
+        {
+            cluster: 'genOnOffSwitchCfg',
+            type: ['attributeReport', 'readResponse'],
+            convert: (model, msg, publish, options, meta) => {
+                if (msg.data.hasOwnProperty('switchActions')) {
+                    return { switch_mode: msg.data['switchActions'] === 0 ? 'hold' : 'press' };
+                }
+                if (msg.data.hasOwnProperty('switchType')) {
+                    return { switch_mode: msg.data['switchType'] === 1 ? 'hold' : 'press' };
+                }
+            },
         }
     ],
     
@@ -89,6 +101,7 @@ const definition = {
         
         // Bind all clusters so the coordinator receives the reports
         await endpoint_pump.bind('genOnOff', coordinatorEndpoint);
+        await endpoint_pump.bind('genOnOffSwitchCfg', coordinatorEndpoint);
         await endpoint_pump.bind('genPowerCfg', coordinatorEndpoint);
         await endpoint_climate.bind('msTemperatureMeasurement', coordinatorEndpoint);
         await endpoint_climate.bind('msRelativeHumidity', coordinatorEndpoint);
@@ -96,6 +109,13 @@ const definition = {
         if (endpoint_load) {
             await endpoint_load.bind('genOnOff', coordinatorEndpoint);
             await endpoint_load.bind('haElectricalMeasurement', coordinatorEndpoint);
+        }
+
+        // Read switch mode configuration
+        try {
+            await endpoint_pump.read('genOnOffSwitchCfg', ['switchActions', 'switchType']);
+        } catch (e) {
+            console.error(`Failed to read switch configuration: ${e}`);
         }
 
         // Configure reporting for the battery cluster
@@ -140,12 +160,26 @@ const definition = {
             convertGet: async (entity, key, meta) => {
                 await entity.read('genOnOff', ['onOff']);
             },
+        },
+        {
+            key: ['switch_mode'],
+            convertSet: async (entity, key, value, meta) => {
+                const isHold = value.toLowerCase() === 'hold';
+                const switchType = isHold ? 1 : 0;
+                const switchActions = isHold ? 0 : 2;
+                await entity.write('genOnOffSwitchCfg', { switchActions: switchActions, switchType: switchType }, meta.options);
+                return { state: { switch_mode: isHold ? 'hold' : 'press' } };
+            },
+            convertGet: async (entity, key, meta) => {
+                await entity.read('genOnOffSwitchCfg', ['switchActions', 'switchType']);
+            },
         }
     ],
     
     // Expose entities to Home Assistant
     exposes: [
         exposes.binary('pump_1', ea.ALL, 'ON', 'OFF').withValueToggle('TOGGLE').withDescription('Pump 1'),
+        exposes.enum('switch_mode', ea.ALL, ['press', 'hold']).withDescription('External pump switch mode: press to run for set duration or hold to run'),
         exposes.binary('load_state', ea.STATE, 'ON', 'OFF').withDescription('Load Output State'),
         e.temperature().withDescription('Temperature'),
         e.humidity().withDescription('Humidity'),

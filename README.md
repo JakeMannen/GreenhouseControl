@@ -30,8 +30,10 @@ Pin assignments can be customized via `idf.py menuconfig` under *Greenhouse Cont
 
 ## Device Operation & Features
 
-### Physical Buttons
-- **Pump Manual Toggle (GPIO 21)**: Press once to toggle the irrigation pump ON or OFF manually.
+### Physical Buttons & External Switch Modes
+- **Pump Manual Switch (GPIO 21)**: Configurable external switch mode via Zigbee (`genOnOffSwitchCfg`):
+  - **PRESS mode (Default)**: Momentary button press toggles the pump ON (runs for the auto-off safety timeout of 10 minutes) or turns it OFF.
+  - **HOLD mode**: Holding the switch closed keeps the pump ON; releasing the switch immediately stops the pump.
 - **Pairing & Factory Reset (GPIO 9 / BOOT)**: Press **3 times within a 2-second window** to reset Zigbee network credentials and enter Zigbee pairing mode (searches for network for 3 minutes).
 
 ### Pump Safety Auto-Off Timer
@@ -107,6 +109,7 @@ The controller exposes four endpoints under the Zigbee Home Automation (HA) prof
 |---|---|---|---|
 | `0x0000` | Basic | `0x0000` (ZCL Version)<br>`0x0001` (App Version)<br>`0x0003` (HW Version)<br>`0x0004` (Manufacturer Name)<br>`0x0005` (Model Identifier)<br>`0x0006` (Date Code)<br>`0x0007` (Power Source)<br>`0x4000` (SW Build ID) | Device metadata, versioning, date code, and power source (`Battery`) |
 | `0x0006` | On/Off | `0x0000` (OnOff) | Water pump 1 output control (ON / OFF) |
+| `0x0007` | On/Off Switch Configuration | `0x0000` (SwitchType)<br>`0x0010` (SwitchActions) | External manual switch mode configuration (`PRESS` / Toggle vs `HOLD` / Momentary), persisted in NVS |
 | `0x0001` | Power Configuration | `0x0020` (BatteryVoltage)<br>`0x0021` (BatteryPercentageRemaining) | Battery voltage (in 100mV units) and state-of-charge percentage (calculated using LiFePO4 discharge curve) |
 | `0x0019` | OTA Upgrade (Client) | `0x0002` (Current File Version)<br>`0x0004` (Downloaded File Version) | Over-The-Air firmware updates |
 

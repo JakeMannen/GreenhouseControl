@@ -14,6 +14,7 @@ static void (*s_factory_reset_cb)(void) = NULL;
 static TimerHandle_t s_safety_timer = NULL;
 static QueueHandle_t s_gpio_evt_queue = NULL;
 static bool s_pump_state = false;
+static gh_switch_mode_t s_switch_mode = GH_SWITCH_MODE_PRESS;
 static int64_t s_last_pump_btn_press_time = 0;
 static int64_t s_last_pairing_btn_press_time = 0;
 static int64_t s_first_pairing_btn_press_time = 0;
@@ -36,11 +37,23 @@ static void gpio_button_task(void* arg) {
             int64_t now = esp_timer_get_time(); // Time in microseconds
             
             if (io_num == CONFIG_GH_BUTTON_GPIO_PIN) {
-                // Debounce time from Kconfig
+                int level = gpio_get_level(CONFIG_GH_BUTTON_GPIO_PIN);
                 if (now - s_last_pump_btn_press_time > CONFIG_GH_BUTTON_DEBOUNCE_US) {
                     s_last_pump_btn_press_time = now;
-                    ESP_LOGI(TAG, "Pump manual button pressed! Toggling pump state.");
-                    gpio_set_pump_state(!s_pump_state);
+                    if (s_switch_mode == GH_SWITCH_MODE_HOLD) {
+                        if (level == 0) {
+                            ESP_LOGI(TAG, "Pump switch pressed (held) in HOLD mode! Turning pump ON.");
+                            gpio_set_pump_state(true);
+                        } else {
+                            ESP_LOGI(TAG, "Pump switch released in HOLD mode! Turning pump OFF.");
+                            gpio_set_pump_state(false);
+                        }
+                    } else { // GH_SWITCH_MODE_PRESS
+                        if (level == 0) {
+                            ESP_LOGI(TAG, "Pump manual button pressed in PRESS mode! Toggling pump state.");
+                            gpio_set_pump_state(!s_pump_state);
+                        }
+                    }
                 }
             } else if (io_num == CONFIG_GH_PAIRING_BUTTON_GPIO_PIN) {
                 // Debounce time from Kconfig
@@ -72,6 +85,7 @@ static void gpio_button_task(void* arg) {
 esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on), void (*factory_reset_cb)(void)) {
     s_pump_state_changed_cb = pump_state_changed_cb;
     s_factory_reset_cb = factory_reset_cb;
+    s_switch_mode = config_manager_get()->switch_mode;
 
     // Configure pump pin (Output, pull-down enabled, active high)
     gpio_config_t io_conf = {
@@ -85,12 +99,12 @@ esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on), void (*fa
     gpio_set_level(CONFIG_GH_PUMP_GPIO_PIN, 0); // Start with pump off
     s_pump_state = false;
 
-    // Configure pump manual button pin (Input, pull-up, interrupt on falling edge)
+    // Configure pump manual button pin (Input, pull-up, interrupt on both edges to detect press and release)
     io_conf.pin_bit_mask = (1ULL << CONFIG_GH_BUTTON_GPIO_PIN);
     io_conf.mode = GPIO_MODE_INPUT;
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io_conf.intr_type = GPIO_INTR_NEGEDGE;
+    io_conf.intr_type = GPIO_INTR_ANYEDGE;
     gpio_config(&io_conf);
 
     // Configure pairing button pin (Input, pull-up, interrupt on falling edge)
@@ -143,7 +157,8 @@ esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on), void (*fa
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "GPIO driver initialized successfully");
+    ESP_LOGI(TAG, "GPIO driver initialized successfully (switch mode: %s)",
+             s_switch_mode == GH_SWITCH_MODE_HOLD ? "HOLD" : "PRESS");
     return ESP_OK;
 }
 
@@ -176,4 +191,20 @@ void gpio_set_pump_state(bool is_on) {
 
 bool gpio_get_pump_state(void) {
     return s_pump_state;
+}
+
+void gpio_set_switch_mode(gh_switch_mode_t mode) {
+    s_switch_mode = mode;
+    ESP_LOGI(TAG, "External switch mode set to: %s", mode == GH_SWITCH_MODE_HOLD ? "HOLD" : "PRESS");
+    if (mode == GH_SWITCH_MODE_HOLD) {
+        int level = gpio_get_level(CONFIG_GH_BUTTON_GPIO_PIN);
+        // If switch is not held (level == 1) but pump is on, turn it off
+        if (level == 1 && s_pump_state) {
+            gpio_set_pump_state(false);
+        }
+    }
+}
+
+gh_switch_mode_t gpio_get_switch_mode(void) {
+    return s_switch_mode;
 }

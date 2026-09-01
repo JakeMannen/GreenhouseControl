@@ -24,6 +24,8 @@ static void set_default_config(app_config_t *cfg) {
     cfg->batt_curve_40_mv = 13100;
     cfg->batt_curve_20_mv = 12800;
     cfg->batt_curve_0_mv = 12000;
+
+    cfg->switch_mode = GH_SWITCH_MODE_PRESS;
 }
 
 esp_err_t config_manager_init(void) {

@@ -17,6 +17,9 @@
 #include "esp_app_desc.h"
 #include "esp_partition.h"
 #include "led.h"
+#include "gpio_controller.h"
+#include "config_manager.h"
+#include "ezbee/zcl/cluster/on_off_switch_config.h"
 
 static const char *TAG = "ZB_CONTROLLER";
 static bool s_is_connected = false;
@@ -40,7 +43,6 @@ bool zigbee_is_connected(void)
 
 static bool s_pairing_mode_active = false;
 static esp_timer_handle_t s_pairing_window_timer;
-static bool s_factory_reset_scheduled = false;
 
 #ifdef OTA_FILE_VERSION
 static uint32_t g_ota_file_version = OTA_FILE_VERSION;
@@ -213,8 +215,42 @@ static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id,
     switch (callback_id) {
         case EZB_ZCL_CORE_SET_ATTR_VALUE_CB_ID: {
             ezb_zcl_set_attr_value_message_t *m = message;
-            ESP_LOGI(TAG, "ZCL SetAttribute ep=%d cluster=0x%04x status=0x%02x",
-                    m->info.dst_ep, m->info.cluster_id, m->info.status);
+            ESP_LOGI(TAG, "ZCL SetAttribute ep=%d cluster=0x%04x attr=0x%04x status=0x%02x",
+                    m->info.dst_ep, m->info.cluster_id, m->in.attribute.id, m->info.status);
+            if (m->info.dst_ep == ZB_PUMP_1_ENDPOINT_ID && m->info.cluster_id == EZB_ZCL_CLUSTER_ID_ON_OFF) {
+                if (m->in.attribute.id == EZB_ZCL_ATTR_ON_OFF_ON_OFF_ID && m->in.attribute.data.value) {
+                    bool val = *(bool *)m->in.attribute.data.value;
+                    ESP_LOGI(TAG, "Zigbee command: Setting pump to %s", val ? "ON" : "OFF");
+                    gpio_set_pump_state(val);
+                }
+            } else if (m->info.dst_ep == ZB_PUMP_1_ENDPOINT_ID && m->info.cluster_id == EZB_ZCL_CLUSTER_ID_ON_OFF_SWITCH_CONFIG) {
+                if (m->in.attribute.data.value) {
+                    uint8_t val = *(uint8_t *)m->in.attribute.data.value;
+                    gh_switch_mode_t new_mode = GH_SWITCH_MODE_PRESS;
+                    if (m->in.attribute.id == EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_TYPE_ID) {
+                        new_mode = (val == 0x01) ? GH_SWITCH_MODE_HOLD : GH_SWITCH_MODE_PRESS;
+                    } else if (m->in.attribute.id == EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_ACTIONS_ID) {
+                        new_mode = (val == 0x00) ? GH_SWITCH_MODE_HOLD : GH_SWITCH_MODE_PRESS;
+                    }
+                    ESP_LOGI(TAG, "Zigbee command: Setting switch mode to %s (raw val=%u)",
+                             new_mode == GH_SWITCH_MODE_HOLD ? "HOLD" : "PRESS", val);
+                    app_config_t cfg = *config_manager_get();
+                    cfg.switch_mode = new_mode;
+                    config_manager_save(&cfg);
+                    gpio_set_switch_mode(new_mode);
+
+                    uint8_t st = (new_mode == GH_SWITCH_MODE_HOLD) ? 0x01 : 0x00;
+                    uint8_t sa = (new_mode == GH_SWITCH_MODE_HOLD) ? 0x00 : 0x02;
+                    ezb_zcl_set_attr_value(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF_SWITCH_CONFIG,
+                                           EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_TYPE_ID,
+                                           EZB_ZCL_STD_MANUF_CODE, &st, false);
+                    ezb_zcl_set_attr_value(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF_SWITCH_CONFIG,
+                                           EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_ACTIONS_ID,
+                                           EZB_ZCL_STD_MANUF_CODE, &sa, false);
+                    zigbee_report_attribute(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF_SWITCH_CONFIG, EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_TYPE_ID);
+                    zigbee_report_attribute(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF_SWITCH_CONFIG, EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_ACTIONS_ID);
+                }
+            }
         } break;
 
         case EZB_ZCL_CORE_DEFAULT_RSP_CB_ID: {
@@ -620,6 +656,28 @@ static esp_err_t zb_register_pump_endpoint(ezb_af_device_desc_t device_desc)
     }
     
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, power_cluster), TAG, "add power config cluster failed");
+
+    // Add on_off_switch_config cluster to configure external switch mode (Hold vs Press)
+    const app_config_t *cfg = config_manager_get();
+    static uint8_t s_switch_type = 0;
+    static uint8_t s_switch_actions = 2;
+    s_switch_type = (cfg->switch_mode == GH_SWITCH_MODE_HOLD) ? 0x01 : 0x00;
+    s_switch_actions = (cfg->switch_mode == GH_SWITCH_MODE_HOLD) ? 0x00 : 0x02;
+
+    ezb_zcl_on_off_switch_config_cluster_server_config_t switch_cfg = {
+        .switch_type = s_switch_type,
+        .switch_actions = s_switch_actions,
+    };
+    ezb_zcl_cluster_desc_t switch_config_cluster = ezb_zcl_on_off_switch_config_create_cluster_desc(&switch_cfg, EZB_ZCL_CLUSTER_SERVER);
+    ezb_zcl_attr_desc_t st_desc = ezb_zcl_cluster_get_attr_desc(switch_config_cluster, EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_TYPE_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (st_desc) {
+        ezb_zcl_attr_desc_set_access(st_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_WRITE | EZB_ZCL_ATTR_ACCESS_REPORTING);
+    }
+    ezb_zcl_attr_desc_t sa_desc = ezb_zcl_cluster_get_attr_desc(switch_config_cluster, EZB_ZCL_ATTR_ON_OFF_SWITCH_CONFIG_SWITCH_ACTIONS_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (sa_desc) {
+        ezb_zcl_attr_desc_set_access(sa_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_WRITE | EZB_ZCL_ATTR_ACCESS_REPORTING);
+    }
+    ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, switch_config_cluster), TAG, "add on_off_switch_config cluster failed");
 
     ESP_ERROR_CHECK(add_basic_cluster_to_endpoint(pump_ep_desc));
 
