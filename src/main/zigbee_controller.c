@@ -151,6 +151,7 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
 }
 
 static uint32_t s_image_start_offset = 0;
+static uint32_t s_last_percent = 0;
 
 static esp_err_t ota_stream_write_block(uint32_t file_offset, uint8_t *block, uint8_t block_size)
 {
@@ -173,11 +174,25 @@ static esp_err_t ota_stream_write_block(uint32_t file_offset, uint8_t *block, ui
 
     // 3. Write only the portion of the block that falls AFTER the headers
     if (file_offset + block_size > s_image_start_offset) {
-        uint32_t write_offset_in_block = 0;
-        if (file_offset < s_image_start_offset) {
-            write_offset_in_block = s_image_start_offset - file_offset;
+        uint32_t payload_offset = file_offset;
+        if (payload_offset < s_image_start_offset) {
+            payload_offset = s_image_start_offset;
         }
         
+        uint32_t expected_offset = s_image_start_offset + s_ota_written_size;
+        
+        if (payload_offset < expected_offset) {
+            ESP_LOGW(TAG, "Duplicate block received at offset %lu (expected %lu), skipping...", 
+                     (unsigned long)file_offset, (unsigned long)expected_offset);
+            return ESP_OK; // Ignore duplicate block
+        }
+        if (payload_offset > expected_offset) {
+            ESP_LOGE(TAG, "Missing block! Expected offset %lu, got %lu. OTA flash sequence corrupted!", 
+                     (unsigned long)expected_offset, (unsigned long)payload_offset);
+            return ESP_FAIL; // Abort because sequential write is broken
+        }
+
+        uint32_t write_offset_in_block = payload_offset - file_offset;
         uint32_t chunk_remaining = block_size - write_offset_in_block;
         uint8_t *chunk_ptr = block + write_offset_in_block;
 
@@ -236,6 +251,7 @@ static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id,
                     s_ota_total_size = m->in.start.image_size;
                     s_ota_received_size = 0;
                     s_ota_written_size = 0;
+                    s_last_percent = 0;
                     s_tag_header_parsed = false;
                     s_ota_tag_id = 0;
                     s_ota_tag_len = 0;
@@ -266,9 +282,8 @@ static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id,
 
                 case EZB_ZCL_OTA_UPGRADE_PROGRESS_RECEIVING: {
                     s_ota_received_size = m->in.receiving.file_offset + m->in.receiving.block_size;
-                    static uint32_t s_last_percent = 0;
                     uint32_t percent = s_ota_total_size > 0 ? (s_ota_received_size * 100) / s_ota_total_size : 0;
-                    if (percent / 10 != s_last_percent / 10 || percent == 100) {
+                    if (percent != s_last_percent || percent == 100) {
                         s_last_percent = percent;
                         ESP_LOGI(TAG, "OTA Download Progress: %lu%% (%lu/%lu bytes)",
                                  (unsigned long)percent, (unsigned long)s_ota_received_size, (unsigned long)s_ota_total_size);
