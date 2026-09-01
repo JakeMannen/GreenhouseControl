@@ -150,59 +150,40 @@ static bool zb_app_signal_handler(const ezb_app_signal_t *app_signal)
     return true;
 }
 
+static uint32_t s_image_start_offset = 0;
+
 static esp_err_t ota_stream_write_block(uint32_t file_offset, uint8_t *block, uint8_t block_size)
 {
     if (!s_ota_in_progress || !block || block_size == 0) {
         return ESP_FAIL;
     }
 
-    uint32_t chunk_offset = file_offset;
-    uint32_t chunk_remaining = block_size;
-    uint8_t *chunk_ptr = block;
-
-    // 1. If we have not yet parsed the OTA header (first 56+ bytes):
-    if (chunk_offset < sizeof(ezb_zcl_ota_file_header_t) && s_ota_header_len == 0) {
-        if (chunk_offset + chunk_remaining >= sizeof(ezb_zcl_ota_file_header_t)) {
-            ezb_zcl_ota_file_header_t *hdr = (ezb_zcl_ota_file_header_t *)chunk_ptr;
-            s_ota_header_len = hdr->hdr_length;
-            ESP_LOGI(TAG, "OTA File Header parsed: hdr_len=%u, total_size=%lu, file_ver=0x%08lx",
-                     s_ota_header_len, (unsigned long)hdr->total_image_size, (unsigned long)hdr->file_version);
-        }
+    // 1. Extract header length from the very first block (offset 6)
+    if (s_ota_header_len == 0 && file_offset == 0 && block_size >= 8) {
+        s_ota_header_len = *((uint16_t *)(block + 6));
+        s_image_start_offset = s_ota_header_len + 6; // 6 bytes for the upgrade image tag header
+        ESP_LOGI(TAG, "OTA Header parsed: hdr_len=%lu, image_start_offset=%lu",
+                 (unsigned long)s_ota_header_len, (unsigned long)s_image_start_offset);
     }
 
-    // 2. Skip over OTA file header if we are within the header region
-    if (s_ota_header_len > 0 && chunk_offset < s_ota_header_len) {
-        uint32_t skip = s_ota_header_len - chunk_offset;
-        if (skip >= chunk_remaining) {
-            return ESP_OK; // entire block was header
-        }
-        chunk_offset += skip;
-        chunk_remaining -= skip;
-        chunk_ptr += skip;
+    // 2. If we haven't found the start offset yet, we can't write (should not happen if first block >= 8 bytes)
+    if (s_image_start_offset == 0) {
+        return ESP_OK;
     }
 
-    // 3. Parse sub-element tag header (6 bytes: tag_id 2 bytes + length 4 bytes)
-    if (!s_tag_header_parsed && s_ota_header_len > 0 && chunk_offset >= s_ota_header_len) {
-        uint32_t tag_hdr_offset = chunk_offset - s_ota_header_len;
-        if (tag_hdr_offset == 0 && chunk_remaining >= sizeof(ezb_zcl_ota_file_sub_element_header_t)) {
-            ezb_zcl_ota_file_sub_element_header_t *tag_hdr = (ezb_zcl_ota_file_sub_element_header_t *)chunk_ptr;
-            s_ota_tag_id = tag_hdr->tag_id;
-            s_ota_tag_len = tag_hdr->length;
-            s_tag_header_parsed = true;
-            ESP_LOGI(TAG, "OTA Tag Header parsed: tag_id=0x%04x, tag_len=%lu bytes",
-                     s_ota_tag_id, (unsigned long)s_ota_tag_len);
-
-            chunk_offset += sizeof(ezb_zcl_ota_file_sub_element_header_t);
-            chunk_remaining -= sizeof(ezb_zcl_ota_file_sub_element_header_t);
-            chunk_ptr += sizeof(ezb_zcl_ota_file_sub_element_header_t);
+    // 3. Write only the portion of the block that falls AFTER the headers
+    if (file_offset + block_size > s_image_start_offset) {
+        uint32_t write_offset_in_block = 0;
+        if (file_offset < s_image_start_offset) {
+            write_offset_in_block = s_image_start_offset - file_offset;
         }
-    }
+        
+        uint32_t chunk_remaining = block_size - write_offset_in_block;
+        uint8_t *chunk_ptr = block + write_offset_in_block;
 
-    // 4. If we have binary payload data to write
-    if (s_tag_header_parsed && chunk_remaining > 0 && s_ota_tag_id == EZB_ZCL_OTA_FILE_TAG_ID_UPGRADE_IMAGE) {
         esp_err_t err = esp_ota_write(s_ota_handle, (const void *)chunk_ptr, chunk_remaining);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "esp_ota_write failed (offset=%lu, len=%lu): %s",
+            ESP_LOGE(TAG, "esp_ota_write failed (written=%lu, len=%lu): %s",
                      (unsigned long)s_ota_written_size, (unsigned long)chunk_remaining, esp_err_to_name(err));
             return err;
         }
@@ -259,6 +240,7 @@ static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id,
                     s_ota_tag_id = 0;
                     s_ota_tag_len = 0;
                     s_ota_header_len = 0;
+                    s_image_start_offset = 0;
 
                     s_ota_partition = esp_ota_get_next_update_partition(NULL);
                     if (!s_ota_partition) {
@@ -774,15 +756,27 @@ static void zb_main_task(void *arg)
     ESP_ERROR_CHECK(esp_zigbee_start(false));
 
 #ifdef OTA_FILE_VERSION
-    // Aggressively set the value via API now that the stack is running
-    uint32_t val = OTA_FILE_VERSION;
-    ezb_zcl_status_t st1 = ezb_zcl_set_attr_value(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_OTA_UPGRADE, EZB_ZCL_CLUSTER_CLIENT,
-                                                  EZB_ZCL_ATTR_OTA_UPGRADE_CURRENT_FILE_VERSION_ID, EZB_ZCL_STD_MANUF_CODE,
-                                                  &val, false);
-    ezb_zcl_status_t st2 = ezb_zcl_set_attr_value(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_OTA_UPGRADE, EZB_ZCL_CLUSTER_CLIENT,
-                                                  EZB_ZCL_ATTR_OTA_UPGRADE_DOWNLOADED_FILE_VERSION_ID, EZB_ZCL_STD_MANUF_CODE,
-                                                  &val, false);
-    ESP_LOGI(TAG, "Aggressive API set OTA Version: val=0x%08lx, st1=0x%02x, st2=0x%02x", (unsigned long)val, st1, st2);
+    ESP_LOGI(TAG, "OTA Current File Version before start: 0x%08lx", (unsigned long)g_ota_file_version);
+    // esp_zigbee_start() copies attribute values into its own internal memory pool.
+    // Direct writes to our global pointer have no effect after this point.
+    // We must use the official API to update the stack's internal copy.
+    
+    // The SDK's OTA init may have overwritten g_ota_file_version with 0xFFFFFFFF if flashed via USB.
+    // Re-initialize it here before updating the stack's internal copy!
+    g_ota_file_version = OTA_FILE_VERSION;
+    g_ota_downloaded_file_version = OTA_FILE_VERSION;
+
+    ezb_zcl_status_t st1 = ezb_zcl_set_attr_value(
+        ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_OTA_UPGRADE, EZB_ZCL_CLUSTER_CLIENT,
+        EZB_ZCL_ATTR_OTA_UPGRADE_CURRENT_FILE_VERSION_ID, EZB_ZCL_STD_MANUF_CODE,
+        &g_ota_file_version, false);
+    
+    ezb_zcl_status_t st2 = ezb_zcl_set_attr_value(
+        ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_OTA_UPGRADE, EZB_ZCL_CLUSTER_CLIENT,
+        EZB_ZCL_ATTR_OTA_UPGRADE_DOWNLOADED_FILE_VERSION_ID, EZB_ZCL_STD_MANUF_CODE,
+        &g_ota_downloaded_file_version, false);
+
+    ESP_LOGI(TAG, "OTA File Version set via API after start: 0x%08lx (st1=0x%02x, st2=0x%02x)", (unsigned long)g_ota_file_version, st1, st2);
 #endif
 
     esp_zigbee_launch_mainloop();

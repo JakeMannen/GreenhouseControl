@@ -122,7 +122,7 @@ const definition = {
 
         // Read current OTA file version
         try {
-            await endpoint_pump.read('genOta', ['currentFileVersion']);
+            await endpoint_pump.read('genOta', ['currentFileVersion'], { direction: 1 });
         } catch (e) {
             console.error(`Failed to read currentFileVersion: ${e}`);
         }
