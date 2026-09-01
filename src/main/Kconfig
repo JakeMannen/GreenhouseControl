@@ -65,7 +65,7 @@ menu "Greenhouse Controller Configuration"
 
         config GH_ZIGBEE_SW_BUILD_ID
             string "Software Build ID"
-            default "1.0.0"
+            default "0.0.1"
             help
                 Zigbee Software Build ID
     endmenu

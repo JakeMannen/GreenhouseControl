@@ -40,8 +40,12 @@ jobs:
           else
             BUILD=${{ steps.semver.outputs.increment }}
           fi
-          # Zigbee File Version Format: uint32 (Major, Minor, Patch, Build/Increment)
-          HEX_VER=$(printf "0x%02x%02x%02x%02x" $MAJOR $MINOR $PATCH $BUILD)
+          # Zigbee File Version Format (4 bytes):
+          # Byte 3 (App Version): Major
+          # Byte 2 (App Build):   Build / Increment
+          # Byte 1 (Stack Ver):   Minor
+          # Byte 0 (Stack Build): Patch
+          HEX_VER=$(printf "0x%02x%02x%02x%02x" $MAJOR $BUILD $MINOR $PATCH)
           echo "OTA_FILE_VERSION=$HEX_VER" >> $GITHUB_ENV
           echo "APP_VERSION=${{ steps.semver.outputs.version }}" >> $GITHUB_ENV
           echo "Semantic version converted to $HEX_VER"

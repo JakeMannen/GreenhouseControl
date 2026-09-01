@@ -142,6 +142,7 @@ This device supports Zigbee OTA updates to flash new firmware wirelessly without
 The GitHub Actions CI/CD pipeline automatically compiles `.ota` firmware files and attaches them to GitHub Releases. Because this is a custom local device, OTA updates are uploaded directly through Zigbee2MQTT.
 
 **Key Technical Details:**
+* **Versioning Scheme**: Local builds default to `Firmware-ID: 0.0.1 <build_date>` and `Firmware-version: 256` (`0x00000100`). Automated CI release builds use semantic versioning (e.g., `v1.2.3` / `0x01020300`).
 * **Block Size**: 50 bytes per chunk (fits in a single unfragmented 802.15.4 frame).
 * **Partition Pre-Erase**: Target flash partition is pre-erased upfront upon transfer start to eliminate flash erase stalls during chunk reception.
 * **Reporting Suppression**: Sensor attribute reporting is automatically paused during OTA downloads to prioritize radio bandwidth.

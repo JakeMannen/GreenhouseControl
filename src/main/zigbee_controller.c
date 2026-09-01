@@ -40,6 +40,12 @@ bool zigbee_is_connected(void)
 
 static bool s_pairing_mode_active = false;
 static esp_timer_handle_t s_pairing_window_timer;
+static bool s_factory_reset_scheduled = false;
+
+#ifdef OTA_FILE_VERSION
+static uint32_t g_ota_file_version = OTA_FILE_VERSION;
+static uint32_t g_ota_downloaded_file_version = OTA_FILE_VERSION;
+#endif
 
 static void pairing_window_timer_cb(void *arg)
 {
@@ -388,8 +394,7 @@ static bool zb_raw_frame_handler(const ezb_zcl_raw_frame_t *raw_frame)
         ESP_LOGI(TAG, "Received OTA ImageNotify (payload_type=%u, jitter=%u) from 0x%04x:ep%d",
                  payload_type, query_jitter, raw_frame->header->src_addr.u.short_addr, raw_frame->header->src_ep);
 
-        // Send QueryNextImageRequest to the sender
-        // Setting file_version to 0 ensures OTA server serves available firmware (including downgrades/forced updates)
+        // Send QueryNextImageRequest with actual firmware version
         ezb_zcl_ota_upgrade_query_next_image_req_cmd_t query_req = {
             .cmd_ctrl = {
                 .dst_ep = raw_frame->header->src_ep,
@@ -401,7 +406,11 @@ static bool zb_raw_frame_handler(const ezb_zcl_raw_frame_t *raw_frame)
                 .fc = 0,
                 .manuf_code = 0x1001,
                 .image_type = 0x1011,
+#ifdef OTA_FILE_VERSION
+                .file_version = OTA_FILE_VERSION,
+#else
                 .file_version = 0,
+#endif
                 .hw_version = ZB_MODEL_HW_VERSION,
             },
         };
@@ -559,9 +568,35 @@ static esp_err_t zb_register_pump_endpoint(ezb_af_device_desc_t device_desc)
     ezb_zcl_cluster_desc_t ota_cluster = ezb_zcl_ota_upgrade_create_cluster_desc(&ota_client_config, EZB_ZCL_CLUSTER_CLIENT);
 
 #ifdef OTA_FILE_VERSION
-    static uint32_t ota_file_version = OTA_FILE_VERSION;
-    ezb_zcl_ota_upgrade_cluster_desc_add_attr(ota_cluster, EZB_ZCL_ATTR_OTA_UPGRADE_CURRENT_FILE_VERSION_ID, &ota_file_version);
-    ezb_zcl_ota_upgrade_cluster_desc_add_attr(ota_cluster, EZB_ZCL_ATTR_OTA_UPGRADE_DOWNLOADED_FILE_VERSION_ID, &ota_file_version);
+    ezb_zcl_attr_desc_t curr_ver_desc = ezb_zcl_cluster_get_attr_desc(ota_cluster, EZB_ZCL_ATTR_OTA_UPGRADE_CURRENT_FILE_VERSION_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (curr_ver_desc) {
+        ezb_zcl_attr_desc_set_value(curr_ver_desc, &g_ota_file_version);
+        ezb_zcl_attr_desc_set_access(curr_ver_desc, EZB_ZCL_ATTR_ACCESS_READ);
+    } else {
+        curr_ver_desc = ezb_zcl_create_attr_desc(EZB_ZCL_ATTR_OTA_UPGRADE_CURRENT_FILE_VERSION_ID, 
+                                                 EZB_ZCL_ATTR_TYPE_UINT32, 
+                                                 EZB_ZCL_ATTR_ACCESS_READ, 
+                                                 EZB_ZCL_STD_MANUF_CODE, 
+                                                 &g_ota_file_version);
+        if (curr_ver_desc) {
+            ezb_zcl_cluster_add_attr_desc(ota_cluster, curr_ver_desc);
+        }
+    }
+
+    ezb_zcl_attr_desc_t down_ver_desc = ezb_zcl_cluster_get_attr_desc(ota_cluster, EZB_ZCL_ATTR_OTA_UPGRADE_DOWNLOADED_FILE_VERSION_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (down_ver_desc) {
+        ezb_zcl_attr_desc_set_value(down_ver_desc, &g_ota_downloaded_file_version);
+        ezb_zcl_attr_desc_set_access(down_ver_desc, EZB_ZCL_ATTR_ACCESS_READ);
+    } else {
+        down_ver_desc = ezb_zcl_create_attr_desc(EZB_ZCL_ATTR_OTA_UPGRADE_DOWNLOADED_FILE_VERSION_ID, 
+                                                 EZB_ZCL_ATTR_TYPE_UINT32, 
+                                                 EZB_ZCL_ATTR_ACCESS_READ, 
+                                                 EZB_ZCL_STD_MANUF_CODE, 
+                                                 &g_ota_downloaded_file_version);
+        if (down_ver_desc) {
+            ezb_zcl_cluster_add_attr_desc(ota_cluster, down_ver_desc);
+        }
+    }
 #endif
 
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, ota_cluster), TAG, "add ota cluster failed");
@@ -730,9 +765,25 @@ static void zb_main_task(void *arg)
     ezb_zcl_ota_upgrade_cluster_client_init(ZB_PUMP_1_ENDPOINT_ID);
     ezb_zcl_ota_upgrade_set_hw_version(ZB_PUMP_1_ENDPOINT_ID, ZB_MODEL_HW_VERSION);
     ezb_zcl_ota_upgrade_set_download_block_size(ZB_PUMP_1_ENDPOINT_ID, 50);
+
+#ifdef OTA_FILE_VERSION
+    ESP_LOGI(TAG, "OTA Current File Version before start: 0x%08lx", (unsigned long)g_ota_file_version);
+#endif
     ezb_af_node_desc_set_manuf_code(0x1001);
 
     ESP_ERROR_CHECK(esp_zigbee_start(false));
+
+#ifdef OTA_FILE_VERSION
+    // Aggressively set the value via API now that the stack is running
+    uint32_t val = OTA_FILE_VERSION;
+    ezb_zcl_status_t st1 = ezb_zcl_set_attr_value(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_OTA_UPGRADE, EZB_ZCL_CLUSTER_CLIENT,
+                                                  EZB_ZCL_ATTR_OTA_UPGRADE_CURRENT_FILE_VERSION_ID, EZB_ZCL_STD_MANUF_CODE,
+                                                  &val, false);
+    ezb_zcl_status_t st2 = ezb_zcl_set_attr_value(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_OTA_UPGRADE, EZB_ZCL_CLUSTER_CLIENT,
+                                                  EZB_ZCL_ATTR_OTA_UPGRADE_DOWNLOADED_FILE_VERSION_ID, EZB_ZCL_STD_MANUF_CODE,
+                                                  &val, false);
+    ESP_LOGI(TAG, "Aggressive API set OTA Version: val=0x%08lx, st1=0x%02x, st2=0x%02x", (unsigned long)val, st1, st2);
+#endif
 
     esp_zigbee_launch_mainloop();
 
