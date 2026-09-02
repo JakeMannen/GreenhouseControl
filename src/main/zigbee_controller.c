@@ -222,6 +222,19 @@ static void zb_zcl_action_handler(ezb_zcl_core_action_callback_id_t callback_id,
                     bool val = *(bool *)m->in.attribute.data.value;
                     ESP_LOGI(TAG, "Zigbee command: Setting pump to %s", val ? "ON" : "OFF");
                     gpio_set_pump_state(val);
+                } else if (m->in.attribute.id == EZB_ZCL_ATTR_ON_OFF_ON_TIME_ID && m->in.attribute.data.value) {
+                    uint16_t on_time_tenths = *(uint16_t *)m->in.attribute.data.value;
+                    uint32_t runtime_sec = (on_time_tenths > 0) ? (on_time_tenths / 10) : 1;
+                    ESP_LOGI(TAG, "Zigbee command: Setting pump runtime to %lu seconds (%u tenths)",
+                             (unsigned long)runtime_sec, on_time_tenths);
+                    app_config_t cfg = *config_manager_get();
+                    cfg.pump_runtime_sec = runtime_sec;
+                    config_manager_save(&cfg);
+                    gpio_set_pump_runtime(runtime_sec);
+                    ezb_zcl_set_attr_value(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF,
+                                           EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_ON_OFF_ON_TIME_ID,
+                                           EZB_ZCL_STD_MANUF_CODE, &on_time_tenths, false);
+                    zigbee_report_attribute(ZB_PUMP_1_ENDPOINT_ID, EZB_ZCL_CLUSTER_ID_ON_OFF, EZB_ZCL_ATTR_ON_OFF_ON_TIME_ID);
                 }
             } else if (m->info.dst_ep == ZB_PUMP_1_ENDPOINT_ID && m->info.cluster_id == EZB_ZCL_CLUSTER_ID_ON_OFF_SWITCH_CONFIG) {
                 if (m->in.attribute.data.value) {
@@ -587,6 +600,16 @@ static esp_err_t zb_register_pump_endpoint(ezb_af_device_desc_t device_desc)
     // Create pump on/off cluster description
     ezb_zcl_cluster_desc_t on_off_cluster = ezb_zcl_on_off_create_cluster_desc(&onoff_cfg, EZB_ZCL_CLUSTER_SERVER);
 
+    // Add OnTime attribute (0x4001, uint16, in 0.1s units per ZCL spec)
+    const app_config_t *cfg = config_manager_get();
+    static uint16_t s_on_time = 6000;
+    s_on_time = (cfg->pump_runtime_sec > 0) ? (uint16_t)(cfg->pump_runtime_sec * 10) : 6000;
+    ezb_zcl_on_off_cluster_desc_add_attr(on_off_cluster, EZB_ZCL_ATTR_ON_OFF_ON_TIME_ID, &s_on_time);
+    ezb_zcl_attr_desc_t on_time_desc = ezb_zcl_cluster_get_attr_desc(on_off_cluster, EZB_ZCL_ATTR_ON_OFF_ON_TIME_ID, EZB_ZCL_STD_MANUF_CODE);
+    if (on_time_desc) {
+        ezb_zcl_attr_desc_set_access(on_time_desc, EZB_ZCL_ATTR_ACCESS_READ | EZB_ZCL_ATTR_ACCESS_WRITE | EZB_ZCL_ATTR_ACCESS_REPORTING);
+    }
+
     // Add pump on/off cluster description to pump endpoint
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, on_off_cluster), TAG, "add pump 1 on/off cluster failed");
 
@@ -658,7 +681,6 @@ static esp_err_t zb_register_pump_endpoint(ezb_af_device_desc_t device_desc)
     ESP_RETURN_ON_ERROR(ezb_af_endpoint_add_cluster_desc(pump_ep_desc, power_cluster), TAG, "add power config cluster failed");
 
     // Add on_off_switch_config cluster to configure external switch mode (Hold vs Press)
-    const app_config_t *cfg = config_manager_get();
     static uint8_t s_switch_type = 0;
     static uint8_t s_switch_actions = 2;
     s_switch_type = (cfg->switch_mode == GH_SWITCH_MODE_HOLD) ? 0x01 : 0x00;

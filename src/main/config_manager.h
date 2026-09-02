@@ -34,6 +34,7 @@ typedef struct {
 
     // External Switch Settings
     gh_switch_mode_t switch_mode;
+    int32_t pump_runtime_sec; // Pump runtime duration in seconds (default 600s = 10 min)
 
 } app_config_t;
 

@@ -15,6 +15,7 @@ static TimerHandle_t s_safety_timer = NULL;
 static QueueHandle_t s_gpio_evt_queue = NULL;
 static bool s_pump_state = false;
 static gh_switch_mode_t s_switch_mode = GH_SWITCH_MODE_PRESS;
+static uint32_t s_pump_runtime_sec = CONFIG_GH_PUMP_SAFETY_TIMEOUT_MIN * 60;
 static int64_t s_last_pump_btn_press_time = 0;
 static int64_t s_last_pairing_btn_press_time = 0;
 static int64_t s_first_pairing_btn_press_time = 0;
@@ -147,8 +148,11 @@ esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on), void (*fa
     }
 
     // Create FreeRTOS timer for pump safety timeout
+    s_pump_runtime_sec = (config_manager_get()->pump_runtime_sec > 0) ? 
+                         config_manager_get()->pump_runtime_sec : 
+                         (CONFIG_GH_PUMP_SAFETY_TIMEOUT_MIN * 60);
     s_safety_timer = xTimerCreate("pump_safety_timer",
-                                  pdMS_TO_TICKS(CONFIG_GH_PUMP_SAFETY_TIMEOUT_MIN * 60 * 1000),
+                                  pdMS_TO_TICKS(s_pump_runtime_sec * 1000),
                                   pdFALSE, // One-shot
                                   (void*)0,
                                   safety_timer_callback);
@@ -157,8 +161,8 @@ esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on), void (*fa
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "GPIO driver initialized successfully (switch mode: %s)",
-             s_switch_mode == GH_SWITCH_MODE_HOLD ? "HOLD" : "PRESS");
+    ESP_LOGI(TAG, "GPIO driver initialized successfully (switch mode: %s, runtime: %lu s)",
+             s_switch_mode == GH_SWITCH_MODE_HOLD ? "HOLD" : "PRESS", (unsigned long)s_pump_runtime_sec);
     return ESP_OK;
 }
 
@@ -174,7 +178,7 @@ void gpio_set_pump_state(bool is_on) {
     if (is_on) {
         if (s_safety_timer != NULL) {
             xTimerStart(s_safety_timer, 0);
-            ESP_LOGI(TAG, "Pump safety timer started for %d minutes", CONFIG_GH_PUMP_SAFETY_TIMEOUT_MIN);
+            ESP_LOGI(TAG, "Pump safety timer started for %lu seconds", (unsigned long)s_pump_runtime_sec);
         }
     } else {
         if (s_safety_timer != NULL) {
@@ -207,4 +211,22 @@ void gpio_set_switch_mode(gh_switch_mode_t mode) {
 
 gh_switch_mode_t gpio_get_switch_mode(void) {
     return s_switch_mode;
+}
+
+void gpio_set_pump_runtime(uint32_t runtime_sec) {
+    if (runtime_sec == 0) {
+        runtime_sec = 1;
+    }
+    s_pump_runtime_sec = runtime_sec;
+    ESP_LOGI(TAG, "Pump runtime configured to %lu seconds", (unsigned long)runtime_sec);
+    if (s_safety_timer != NULL) {
+        xTimerChangePeriod(s_safety_timer, pdMS_TO_TICKS(runtime_sec * 1000), 0);
+        if (!s_pump_state) {
+            xTimerStop(s_safety_timer, 0);
+        }
+    }
+}
+
+uint32_t gpio_get_pump_runtime(void) {
+    return s_pump_runtime_sec;
 }

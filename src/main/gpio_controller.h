@@ -48,6 +48,20 @@ void gpio_set_switch_mode(gh_switch_mode_t mode);
  */
 gh_switch_mode_t gpio_get_switch_mode(void);
 
+/**
+ * @brief Set the pump run duration / safety timer in seconds.
+ * 
+ * @param runtime_sec Duration in seconds
+ */
+void gpio_set_pump_runtime(uint32_t runtime_sec);
+
+/**
+ * @brief Get the pump run duration / safety timer in seconds.
+ * 
+ * @return uint32_t Duration in seconds
+ */
+uint32_t gpio_get_pump_runtime(void);
+
 #ifdef __cplusplus
 }
 #endif
