@@ -56,7 +56,7 @@ esp_err_t ve_direct_finalize_block(ve_direct_data_t *temp_data, uint8_t checksum
             }
             xSemaphoreGive(s_ve_mutex);
             
-            ESP_LOGI(TAG, "Parsed VALID VE.Direct block: Battery=%ld mV, Current=%ld mA, Solar=%ld mV, Power=%ld W",
+            ESP_LOGD(TAG, "Parsed VALID VE.Direct block: Battery=%ld mV, Current=%ld mA, Solar=%ld mV, Power=%ld W",
                      (long)s_ve_data.battery_voltage_mv, (long)s_ve_data.charge_current_ma, 
                      (long)s_ve_data.panel_voltage_mv, (long)s_ve_data.panel_power_w);
         }
