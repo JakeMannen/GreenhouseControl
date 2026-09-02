@@ -10,3 +10,8 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 #
 CONFIG_ZB_ENABLED=y
 # end of Zigbee
+
+#
+# Greenhouse Controller
+#
+CONFIG_GH_VE_DIRECT_INVERT_RX=y
