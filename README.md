@@ -33,7 +33,7 @@ Pin assignments can be customized via `idf.py menuconfig` under *Greenhouse Cont
 ### Physical Buttons & External Switch Modes
 - **Pump Manual Switch (GPIO 21)**: Configurable external switch mode via Zigbee (`genOnOffSwitchCfg`):
   - **PRESS mode (Default)**: Momentary button press toggles the pump ON (runs for the configurable runtime / safety timeout, default 10 minutes) or turns it OFF.
-  - **HOLD mode**: Holding the switch closed keeps the pump ON; releasing the switch immediately stops the pump.
+  - **HOLD mode**: Holding the switch closed for at least 1 second turns and keeps the pump ON; short presses (< 1s) are ignored, and releasing the switch immediately stops the pump.
 - **Pairing & Factory Reset (GPIO 9 / BOOT)**: Press **3 times within a 2-second window** to reset Zigbee network credentials and enter Zigbee pairing mode (searches for network for 3 minutes).
 
 ### Pump Safety Auto-Off Timer & Configurable Runtime

@@ -12,6 +12,7 @@ static const char *TAG = "GPIO_DRV";
 static void (*s_pump_state_changed_cb)(bool is_on) = NULL;
 static void (*s_factory_reset_cb)(void) = NULL;
 static TimerHandle_t s_safety_timer = NULL;
+static TimerHandle_t s_hold_threshold_timer = NULL;
 static QueueHandle_t s_gpio_evt_queue = NULL;
 static bool s_pump_state = false;
 static gh_switch_mode_t s_switch_mode = GH_SWITCH_MODE_PRESS;
@@ -24,6 +25,16 @@ static uint8_t s_pairing_btn_press_count = 0;
 static void safety_timer_callback(TimerHandle_t xTimer) {
     ESP_LOGW(TAG, "Pump safety timeout reached! Automatically shutting off pump.");
     gpio_set_pump_state(false);
+}
+
+static void hold_threshold_timer_cb(TimerHandle_t xTimer) {
+    if (s_switch_mode == GH_SWITCH_MODE_HOLD) {
+        int level = gpio_get_level(CONFIG_GH_BUTTON_GPIO_PIN);
+        if (level == 0) {
+            ESP_LOGI(TAG, "Button held >= 1s threshold in HOLD mode. Turning pump ON.");
+            gpio_set_pump_state(true);
+        }
+    }
 }
 
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
@@ -39,18 +50,29 @@ static void gpio_button_task(void* arg) {
             
             if (io_num == CONFIG_GH_BUTTON_GPIO_PIN) {
                 int level = gpio_get_level(CONFIG_GH_BUTTON_GPIO_PIN);
-                if (now - s_last_pump_btn_press_time > CONFIG_GH_BUTTON_DEBOUNCE_US) {
-                    s_last_pump_btn_press_time = now;
-                    if (s_switch_mode == GH_SWITCH_MODE_HOLD) {
-                        if (level == 0) {
-                            ESP_LOGI(TAG, "Pump switch pressed (held) in HOLD mode! Turning pump ON.");
-                            gpio_set_pump_state(true);
-                        } else {
+                if (s_switch_mode == GH_SWITCH_MODE_HOLD) {
+                    if (level == 0) {
+                        // Button pressed (LOW) - start 1-second threshold timer if not already on
+                        if (!s_pump_state && s_hold_threshold_timer != NULL) {
+                            xTimerStart(s_hold_threshold_timer, 0);
+                            ESP_LOGD(TAG, "Hold threshold timer started (1s)");
+                        }
+                    } else {
+                        // Button released (HIGH)
+                        if (s_hold_threshold_timer != NULL) {
+                            xTimerStop(s_hold_threshold_timer, 0);
+                        }
+                        if (s_pump_state) {
                             ESP_LOGI(TAG, "Pump switch released in HOLD mode! Turning pump OFF.");
                             gpio_set_pump_state(false);
+                        } else {
+                            ESP_LOGD(TAG, "Pump switch released before 1s threshold. Ignoring.");
                         }
-                    } else { // GH_SWITCH_MODE_PRESS
-                        if (level == 0) {
+                    }
+                } else { // GH_SWITCH_MODE_PRESS
+                    if (level == 0) {
+                        if (now - s_last_pump_btn_press_time > CONFIG_GH_BUTTON_DEBOUNCE_US) {
+                            s_last_pump_btn_press_time = now;
                             ESP_LOGI(TAG, "Pump manual button pressed in PRESS mode! Toggling pump state.");
                             gpio_set_pump_state(!s_pump_state);
                         }
@@ -161,6 +183,17 @@ esp_err_t gpio_drivers_init(void (*pump_state_changed_cb)(bool is_on), void (*fa
         return ESP_ERR_NO_MEM;
     }
 
+    // Create FreeRTOS timer for 1-second hold threshold in HOLD mode
+    s_hold_threshold_timer = xTimerCreate("pump_hold_timer",
+                                          pdMS_TO_TICKS(1000), // 1 second threshold
+                                          pdFALSE, // One-shot
+                                          (void*)0,
+                                          hold_threshold_timer_cb);
+    if (s_hold_threshold_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create pump hold threshold timer");
+        return ESP_ERR_NO_MEM;
+    }
+
     ESP_LOGI(TAG, "GPIO driver initialized successfully (switch mode: %s, runtime: %lu s)",
              s_switch_mode == GH_SWITCH_MODE_HOLD ? "HOLD" : "PRESS", (unsigned long)s_pump_runtime_sec);
     return ESP_OK;
@@ -200,6 +233,9 @@ bool gpio_get_pump_state(void) {
 void gpio_set_switch_mode(gh_switch_mode_t mode) {
     s_switch_mode = mode;
     ESP_LOGI(TAG, "External switch mode set to: %s", mode == GH_SWITCH_MODE_HOLD ? "HOLD" : "PRESS");
+    if (s_hold_threshold_timer != NULL) {
+        xTimerStop(s_hold_threshold_timer, 0);
+    }
     if (mode == GH_SWITCH_MODE_HOLD) {
         int level = gpio_get_level(CONFIG_GH_BUTTON_GPIO_PIN);
         // If switch is not held (level == 1) but pump is on, turn it off
