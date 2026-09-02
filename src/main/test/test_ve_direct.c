@@ -46,3 +46,47 @@ void test_ve_direct_finalize_invalid_checksum(void)
     esp_err_t err = ve_direct_finalize_block(&data, 42);
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_CRC, err);
 }
+
+void test_ve_direct_feed_valid_block(void)
+{
+    ve_direct_reset_parser();
+
+    const char *block_prefix = "\r\nPID\t0xA042\r\nV\t12800\r\nI\t1500\r\nChecksum\t";
+    uint8_t sum = 0;
+    for (size_t i = 0; i < strlen(block_prefix); i++) {
+        sum += (uint8_t)block_prefix[i];
+    }
+    uint8_t valid_checksum_byte = (uint8_t)(256 - (sum % 256));
+
+    bool finished = false;
+    for (size_t i = 0; i < strlen(block_prefix); i++) {
+        finished = ve_direct_feed_byte((uint8_t)block_prefix[i]);
+        TEST_ASSERT_FALSE(finished);
+    }
+
+    finished = ve_direct_feed_byte(valid_checksum_byte);
+    TEST_ASSERT_TRUE(finished);
+}
+
+void test_ve_direct_feed_invalid_checksum(void)
+{
+    ve_direct_reset_parser();
+
+    const char *block_prefix = "\r\nPID\t0xA042\r\nV\t12800\r\nChecksum\t";
+    uint8_t sum = 0;
+    for (size_t i = 0; i < strlen(block_prefix); i++) {
+        sum += (uint8_t)block_prefix[i];
+    }
+    // Deliberately wrong checksum
+    uint8_t bad_checksum_byte = (uint8_t)(256 - (sum % 256) + 5);
+
+    bool finished = false;
+    for (size_t i = 0; i < strlen(block_prefix); i++) {
+        finished = ve_direct_feed_byte((uint8_t)block_prefix[i]);
+        TEST_ASSERT_FALSE(finished);
+    }
+
+    finished = ve_direct_feed_byte(bad_checksum_byte);
+    TEST_ASSERT_FALSE(finished);
+}
+
