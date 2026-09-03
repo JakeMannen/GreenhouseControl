@@ -26,6 +26,14 @@ Pin assignments can be customized via `idf.py menuconfig` under *Greenhouse Cont
 | **VE.Direct RX** | GPIO 17 | UART RX (19200 baud) | Receives VE.Direct text protocol from Victron MPPT controller |
 | **Status RGB LED** | GPIO 8 | WS2812 (RMT) | Built-in RGB addressable LED for system status |
 
+### VE.Direct Interface & Optocoupler Isolation
+The Victron MPPT communicates via 19200 baud 8N1 serial. Galvanic isolation using an optocoupler (e.g. **4N25** or **PC817**) is strongly recommended to protect both the ESP32 and MPPT:
+* **Victron JST-PH Pin 3 (TX)** $\rightarrow$ 330 Ω – 470 Ω series resistor $\rightarrow$ Optocoupler Pin 1 (Anode).
+* **Victron JST-PH Pin 1 (GND)** $\rightarrow$ Optocoupler Pin 2 (Cathode).
+* **ESP32 GND** $\rightarrow$ Optocoupler Pin 4 (Emitter).
+* **ESP32 RX (GPIO 17)** $\rightarrow$ Optocoupler Pin 5 (Collector), pulled up to 3.3V with a 1 kΩ – 2.2 kΩ resistor.
+* **Signal Inversion (`CONFIG_GH_VE_DIRECT_INVERT_RX`)**: Enabled by default (`y`) to compensate for inverting open-collector optocouplers. If connecting directly to non-inverting TTL lines, set this to `n` in `idf.py menuconfig`.
+
 ---
 
 ## Device Operation & Features

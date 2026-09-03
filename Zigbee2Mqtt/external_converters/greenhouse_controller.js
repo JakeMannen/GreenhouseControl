@@ -44,7 +44,9 @@ const definition = {
                 // Battery Voltage (0x0020 = 32)
                 if (msg.data.hasOwnProperty('batteryVoltage') || msg.data.hasOwnProperty(32)) {
                     let val = msg.data['batteryVoltage'] !== undefined ? msg.data['batteryVoltage'] : msg.data[32];
-                    result.battery_voltage = val / 10.0;
+                    if (val !== 255) {
+                        result.battery_voltage = val / 10.0;
+                    }
                 }
                 // Battery Percentage (0x0021 = 33)
                 if (msg.data.hasOwnProperty('batteryPercentageRemaining') || msg.data.hasOwnProperty(33)) {

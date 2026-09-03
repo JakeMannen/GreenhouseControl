@@ -19,6 +19,15 @@ menu "Greenhouse Controller Configuration"
             help
                 GPIO pin used to receive data from VE.Direct
 
+        config GH_VE_DIRECT_INVERT_RX
+            bool "Invert VE.Direct UART RX signal"
+            default y
+            help
+                Enable signal inversion on the VE.Direct RX pin.
+                Set to YES if using an inverting optocoupler (such as 4N25 or PC817 common-emitter)
+                or a single-transistor inverter.
+                Set to NO if connecting directly to the VE.Direct port (TTL) or using a non-inverting buffer.
+
         config GH_PUMP_GPIO_PIN
             int "Pump Relay GPIO Pin"
             default 20
