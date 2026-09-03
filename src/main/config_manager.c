@@ -24,6 +24,9 @@ static void set_default_config(app_config_t *cfg) {
     cfg->batt_curve_40_mv = 13100;
     cfg->batt_curve_20_mv = 12800;
     cfg->batt_curve_0_mv = 12000;
+
+    cfg->switch_mode = GH_SWITCH_MODE_PRESS;
+    cfg->pump_runtime_sec = CONFIG_GH_PUMP_SAFETY_TIMEOUT_MIN * 60;
 }
 
 esp_err_t config_manager_init(void) {

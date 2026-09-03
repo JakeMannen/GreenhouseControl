@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include "esp_err.h"
 #include "hal/gpio_types.h"
+#include "config_manager.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +33,34 @@ void gpio_set_pump_state(bool is_on);
  * @return true if the pump is ON, false if it is OFF
  */
 bool gpio_get_pump_state(void);
+
+/**
+ * @brief Set the active external switch mode.
+ * 
+ * @param mode GH_SWITCH_MODE_PRESS or GH_SWITCH_MODE_HOLD
+ */
+void gpio_set_switch_mode(gh_switch_mode_t mode);
+
+/**
+ * @brief Get the active external switch mode.
+ * 
+ * @return gh_switch_mode_t Currently configured switch mode
+ */
+gh_switch_mode_t gpio_get_switch_mode(void);
+
+/**
+ * @brief Set the pump run duration / safety timer in seconds.
+ * 
+ * @param runtime_sec Duration in seconds
+ */
+void gpio_set_pump_runtime(uint32_t runtime_sec);
+
+/**
+ * @brief Get the pump run duration / safety timer in seconds.
+ * 
+ * @return uint32_t Duration in seconds
+ */
+uint32_t gpio_get_pump_runtime(void);
 
 #ifdef __cplusplus
 }

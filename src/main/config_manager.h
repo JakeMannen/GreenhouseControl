@@ -7,6 +7,11 @@
 extern "C" {
 #endif
 
+typedef enum {
+    GH_SWITCH_MODE_PRESS = 0, // Momentary press toggles pump / runs for set duration
+    GH_SWITCH_MODE_HOLD = 1,  // Holding switch runs pump, releasing stops pump
+} gh_switch_mode_t;
+
 typedef struct {
     // Reporting thresholds
     int32_t report_threshold_battery_mv;
@@ -26,6 +31,10 @@ typedef struct {
     int32_t batt_curve_40_mv;
     int32_t batt_curve_20_mv;
     int32_t batt_curve_0_mv;
+
+    // External Switch Settings
+    gh_switch_mode_t switch_mode;
+    int32_t pump_runtime_sec; // Pump runtime duration in seconds (default 600s = 10 min)
 
 } app_config_t;
 
