@@ -6,6 +6,8 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
+#include "sdkconfig.h"
+#include "esp_timer.h"
 
 static const char *TAG = "VE_DIRECT";
 
@@ -54,8 +56,9 @@ esp_err_t ve_direct_finalize_block(ve_direct_data_t *temp_data, uint8_t checksum
             }
             xSemaphoreGive(s_ve_mutex);
             
-            ESP_LOGD(TAG, "Parsed VALID VE.Direct block\n\t| Battery voltage: %d mV |\n\t | Battery current: %d mA |\n\t | Panel voltage: %d mV |\n\t | Panel power: %d W |\n\t | Load current: %d mA |\n\t | Load output state: %d |\n\t | Off reason: %d |",
-                     s_ve_data.battery_voltage_mv, s_ve_data.charge_current_ma, s_ve_data.panel_voltage_mv, s_ve_data.panel_power_w, s_ve_data.load_current, s_ve_data.load_output_state, s_ve_data.off_reason);
+            ESP_LOGD(TAG, "Parsed VALID VE.Direct block: Battery=%ld mV, Current=%ld mA, Solar=%ld mV, Power=%ld W",
+                     (long)s_ve_data.battery_voltage_mv, (long)s_ve_data.charge_current_ma, 
+                     (long)s_ve_data.panel_voltage_mv, (long)s_ve_data.panel_power_w);
         }
         return ESP_OK;
     } else {
@@ -64,47 +67,140 @@ esp_err_t ve_direct_finalize_block(ve_direct_data_t *temp_data, uint8_t checksum
     }
 }
 
+typedef enum {
+    VE_STATE_IDLE,
+    VE_STATE_RECORD_BEGIN,
+    VE_STATE_RECORD_NAME,
+    VE_STATE_RECORD_VALUE,
+    VE_STATE_CHECKSUM
+} ve_parser_state_t;
+
+static ve_parser_state_t s_parser_state = VE_STATE_IDLE;
+static uint8_t s_block_checksum = 0;
+static char s_name_buf[32];
+static size_t s_name_idx = 0;
+static char s_value_buf[32];
+static size_t s_value_idx = 0;
+static ve_direct_data_t s_temp_data = {0};
+
+void ve_direct_reset_parser(void) {
+    s_parser_state = VE_STATE_IDLE;
+    s_block_checksum = 0;
+    s_name_idx = 0;
+    s_value_idx = 0;
+    memset(&s_temp_data, 0, sizeof(s_temp_data));
+}
+
+bool ve_direct_feed_byte(uint8_t c) {
+    bool block_finalized = false;
+
+    // Accumulate checksum for every incoming byte in the frame
+    s_block_checksum += c;
+
+    switch (s_parser_state) {
+        case VE_STATE_IDLE:
+            if (c == '\n') {
+                s_parser_state = VE_STATE_RECORD_BEGIN;
+            }
+            break;
+
+        case VE_STATE_RECORD_BEGIN:
+            if (c == '\r' || c == '\n') {
+                // Ignore additional CR/LF
+                break;
+            } else if (c == ':') {
+                // Victron HEX record start, return to IDLE until next text block
+                s_parser_state = VE_STATE_IDLE;
+                s_block_checksum = 0;
+            } else {
+                s_name_buf[0] = (char)c;
+                s_name_idx = 1;
+                s_parser_state = VE_STATE_RECORD_NAME;
+            }
+            break;
+
+        case VE_STATE_RECORD_NAME:
+            if (c == '\t') {
+                s_name_buf[s_name_idx] = '\0';
+                if (strcasecmp(s_name_buf, "Checksum") == 0) {
+                    s_parser_state = VE_STATE_CHECKSUM;
+                } else {
+                    s_value_idx = 0;
+                    s_parser_state = VE_STATE_RECORD_VALUE;
+                }
+            } else if (c == '\r' || c == '\n') {
+                // Malformed record missing tab delimiter, resync
+                s_parser_state = VE_STATE_IDLE;
+                s_block_checksum = 0;
+            } else if (s_name_idx < sizeof(s_name_buf) - 1) {
+                s_name_buf[s_name_idx++] = (char)c;
+            }
+            break;
+
+        case VE_STATE_RECORD_VALUE:
+            if (c == '\r' || c == '\n') {
+                s_value_buf[s_value_idx] = '\0';
+                ve_direct_parse_line(s_name_buf, s_value_buf, &s_temp_data);
+                s_parser_state = VE_STATE_RECORD_BEGIN;
+            } else if (s_value_idx < sizeof(s_value_buf) - 1) {
+                s_value_buf[s_value_idx++] = (char)c;
+            }
+            break;
+
+        case VE_STATE_CHECKSUM:
+            // Checksum byte c has already been added to s_block_checksum.
+            // In the VE.Direct protocol, a valid block sum modulo 256 equals 0.
+            if (s_block_checksum == 0) {
+                ve_direct_finalize_block(&s_temp_data, 0);
+                block_finalized = true;
+            } else {
+                ESP_LOGW(TAG, "VE.Direct Checksum FAILED! (Sum: 0x%02X). Discarding block.", s_block_checksum);
+            }
+            memset(&s_temp_data, 0, sizeof(s_temp_data));
+            s_block_checksum = 0;
+            s_name_idx = 0;
+            s_value_idx = 0;
+            s_parser_state = VE_STATE_IDLE;
+            break;
+    }
+
+    return block_finalized;
+}
+
 /**
- * @brief FreeRTOS task that continuously reads UART data, buffers lines, and parses them.
- * It accumulates the checksum and handles complete blocks when the Checksum label arrives.
+ * @brief FreeRTOS task that continuously reads UART data and feeds it into the parser.
  */
 static void ve_direct_parser_task(void *pvParameters) {
-    char line_buf[128];
-    int line_idx = 0;
-    ve_direct_data_t temp_data = {0};
-    uint8_t block_checksum = 0;
+    uint8_t rx_buf[64];
+    size_t total_bytes = 0;
+    int64_t last_log = esp_timer_get_time();
     
-    ESP_LOGI(TAG, "VE.Direct parser task started on UART port %d", VE_DIRECT_UART_PORT);
+    ESP_LOGI(TAG, "VE.Direct parser task started on UART port %d (RX inverted: %s)", 
+             VE_DIRECT_UART_PORT,
+#if !defined(CONFIG_GH_VE_DIRECT_INVERT_RX) || (CONFIG_GH_VE_DIRECT_INVERT_RX != 0)
+             "YES"
+#else
+             "NO"
+#endif
+    );
 
     while (1) {
-        uint8_t c;
-        int rx_len = uart_read_bytes(VE_DIRECT_UART_PORT, &c, 1, portMAX_DELAY);
-        if (rx_len <= 0) continue;
-
-        block_checksum += c;
-
-        if (c == '\n') {
-            line_buf[line_idx] = '\0';
-            
-            if (line_idx > 0) {
-                char *tab_ptr = strchr(line_buf, '\t');
-                if (tab_ptr != NULL) {
-                    *tab_ptr = '\0';
-                    char *label = line_buf;
-                    char *value = tab_ptr + 1;
-                    
-                    if (strcmp(label, "Checksum") == 0) {
-                        ve_direct_finalize_block(&temp_data, block_checksum);
-                        memset(&temp_data, 0, sizeof(temp_data));
-                        block_checksum = 0;
-                    } else {
-                        ve_direct_parse_line(label, value, &temp_data);
-                    }
-                }
+        int rx_len = uart_read_bytes(VE_DIRECT_UART_PORT, rx_buf, sizeof(rx_buf), pdMS_TO_TICKS(100));
+        if (rx_len > 0) {
+            total_bytes += rx_len;
+            for (int i = 0; i < rx_len; i++) {
+                ve_direct_feed_byte(rx_buf[i]);
             }
-            line_idx = 0;
-        } else if (c != '\r' && line_idx < sizeof(line_buf) - 1) {
-            line_buf[line_idx++] = c;
+        }
+
+        int64_t now = esp_timer_get_time();
+        if (now - last_log >= 10000000) { // Every 10 seconds
+            if (total_bytes == 0) {
+                ESP_LOGW(TAG, "No UART bytes received from VE.Direct in last 10s! Check 4N25 wiring, pull-up, and pin %d.", CONFIG_GH_VE_DIRECT_RX_PIN);
+            } else {
+                ESP_LOGD(TAG, "VE.Direct UART alive: received %u bytes so far", (unsigned)total_bytes);
+            }
+            last_log = now;
         }
     }
 }
@@ -140,13 +236,24 @@ esp_err_t ve_direct_init(uart_port_t port, gpio_num_t rx_pin, energy_report_call
         return err;
     }
 
-    ESP_ERROR_CHECK(uart_set_line_inverse(VE_DIRECT_UART_PORT, UART_SIGNAL_RXD_INV));
+    // Enable internal pull-up on RX pin to support open-collector optocouplers (e.g. 4N25)
+    gpio_pullup_en(rx_pin);
+
+    // Invert RX line by default (for 4N25/PC817 optocouplers) unless explicitly disabled in Kconfig
+#if !defined(CONFIG_GH_VE_DIRECT_INVERT_RX) || (CONFIG_GH_VE_DIRECT_INVERT_RX != 0)
+    ESP_ERROR_CHECK(uart_set_line_inverse(port, UART_SIGNAL_RXD_INV));
+    ESP_LOGI(TAG, "VE.Direct RX signal inversion ENABLED");
+#else
+    ESP_LOGI(TAG, "VE.Direct RX signal inversion DISABLED");
+#endif
 
     s_ve_mutex = xSemaphoreCreateMutex();
     if (s_ve_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create VE.Direct mutex");
         return ESP_ERR_NO_MEM;
     }
+
+    ve_direct_reset_parser();
 
     xTaskCreate(ve_direct_parser_task, "ve_direct_parser", 3072, NULL, 8, NULL);
     ESP_LOGI(TAG, "VE.Direct initialized on RX pin %d", rx_pin);

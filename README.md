@@ -26,16 +26,26 @@ Pin assignments can be customized via `idf.py menuconfig` under *Greenhouse Cont
 | **VE.Direct RX** | GPIO 17 | UART RX (19200 baud) | Receives VE.Direct text protocol from Victron MPPT controller |
 | **Status RGB LED** | GPIO 8 | WS2812 (RMT) | Built-in RGB addressable LED for system status |
 
+### VE.Direct Interface & Optocoupler Isolation
+The Victron MPPT communicates via 19200 baud 8N1 serial. Galvanic isolation using an optocoupler (e.g. **4N25** or **PC817**) is strongly recommended to protect both the ESP32 and MPPT:
+* **Victron JST-PH Pin 3 (TX)** $\rightarrow$ 330 Ω – 470 Ω series resistor $\rightarrow$ Optocoupler Pin 1 (Anode).
+* **Victron JST-PH Pin 1 (GND)** $\rightarrow$ Optocoupler Pin 2 (Cathode).
+* **ESP32 GND** $\rightarrow$ Optocoupler Pin 4 (Emitter).
+* **ESP32 RX (GPIO 17)** $\rightarrow$ Optocoupler Pin 5 (Collector), pulled up to 3.3V with a 1 kΩ – 2.2 kΩ resistor.
+* **Signal Inversion (`CONFIG_GH_VE_DIRECT_INVERT_RX`)**: Enabled by default (`y`) to compensate for inverting open-collector optocouplers. If connecting directly to non-inverting TTL lines, set this to `n` in `idf.py menuconfig`.
+
 ---
 
 ## Device Operation & Features
 
-### Physical Buttons
-- **Pump Manual Toggle (GPIO 21)**: Press once to toggle the irrigation pump ON or OFF manually.
+### Physical Buttons & External Switch Modes
+- **Pump Manual Switch (GPIO 21)**: Configurable external switch mode via Zigbee (`genOnOffSwitchCfg`):
+  - **PRESS mode (Default)**: Momentary button press toggles the pump ON (runs for the configurable runtime / safety timeout, default 10 minutes) or turns it OFF.
+  - **HOLD mode**: Holding the switch closed for at least 1 second turns and keeps the pump ON; short presses (< 1s) are ignored, and releasing the switch immediately stops the pump.
 - **Pairing & Factory Reset (GPIO 9 / BOOT)**: Press **3 times within a 2-second window** to reset Zigbee network credentials and enter Zigbee pairing mode (searches for network for 3 minutes).
 
-### Pump Safety Auto-Off Timer
-To prevent accidental water overflows or running the pump dry, the controller includes a hardware safety timer (default: **10 minutes**). If the pump is turned on (either via Zigbee or manual button), it will automatically turn off once the timer expires.
+### Pump Safety Auto-Off Timer & Configurable Runtime
+To prevent accidental water overflows or running the pump dry, the controller includes a hardware safety timer (default: **10 minutes / 600 seconds**). This runtime is fully configurable via Zigbee (`genOnOff` attribute `OnTime` `0x4001`) and persisted in NVS. If the pump is turned on (either via Zigbee or manual button), it will automatically turn off once this duration expires.
 
 ### Status LED Indications (WS2812)
 The onboard RGB LED provides visual feedback on device connectivity:
@@ -106,7 +116,8 @@ The controller exposes four endpoints under the Zigbee Home Automation (HA) prof
 | Cluster ID | Cluster Name | Attributes | Description |
 |---|---|---|---|
 | `0x0000` | Basic | `0x0000` (ZCL Version)<br>`0x0001` (App Version)<br>`0x0003` (HW Version)<br>`0x0004` (Manufacturer Name)<br>`0x0005` (Model Identifier)<br>`0x0006` (Date Code)<br>`0x0007` (Power Source)<br>`0x4000` (SW Build ID) | Device metadata, versioning, date code, and power source (`Battery`) |
-| `0x0006` | On/Off | `0x0000` (OnOff) | Water pump 1 output control (ON / OFF) |
+| `0x0006` | On/Off | `0x0000` (OnOff)<br>`0x4001` (OnTime) | Water pump 1 output control (ON / OFF) and configurable auto-off button runtime in 0.1s units (default: 6000 = 600s / 10 min), persisted in NVS |
+| `0x0007` | On/Off Switch Configuration | `0x0000` (SwitchType)<br>`0x0010` (SwitchActions) | External manual switch mode configuration (`PRESS` / Toggle vs `HOLD` / Momentary), persisted in NVS |
 | `0x0001` | Power Configuration | `0x0020` (BatteryVoltage)<br>`0x0021` (BatteryPercentageRemaining) | Battery voltage (in 100mV units) and state-of-charge percentage (calculated using LiFePO4 discharge curve) |
 | `0x0019` | OTA Upgrade (Client) | `0x0002` (Current File Version)<br>`0x0004` (Downloaded File Version) | Over-The-Air firmware updates |
 

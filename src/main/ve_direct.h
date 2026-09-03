@@ -78,9 +78,11 @@ esp_err_t ve_direct_init(uart_port_t port, gpio_num_t rx_pin, energy_report_call
  */
 bool ve_direct_get_data(ve_direct_data_t *data);
 
-// --- Exposed for Unit Testing ---
+// --- Exposed for Unit Testing & Modular Parsing ---
 void ve_direct_parse_line(const char *label, const char *value, ve_direct_data_t *temp_data);
 esp_err_t ve_direct_finalize_block(ve_direct_data_t *temp_data, uint8_t checksum);
+bool ve_direct_feed_byte(uint8_t c);
+void ve_direct_reset_parser(void);
 
 #ifdef __cplusplus
 }
